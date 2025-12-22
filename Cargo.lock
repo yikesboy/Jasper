@@ -15,6 +15,7 @@ dependencies = [
  "songbird",
  "symphonia",
  "tokio",
+ "url",
 ]
 
 [[package]]
