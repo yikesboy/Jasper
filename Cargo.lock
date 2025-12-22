@@ -14,6 +14,7 @@ dependencies = [
  "serenity",
  "songbird",
  "symphonia",
+ "thiserror 2.0.17",
  "tokio",
  "url",
 ]
