@@ -1,6 +1,5 @@
 use super::error::SpotifyAPIError;
 use super::models::{FullTrack, PlaylistTracks, TokenResponse};
-use crate::services::spotify::SpotifyAPIError::MalformedUrl;
 use reqwest::{Client, header};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -99,7 +98,7 @@ impl SpotifyAPI {
 
         let mut segments = match playlist_url.path_segments() {
             Some(segments) => segments,
-            None => return Err(MalformedUrl(playlist_url)),
+            None => return Err(SpotifyAPIError::MalformedUrl(playlist_url)),
         };
 
         if segments.next() != Some("playlist") {
