@@ -1,6 +1,6 @@
 use super::error::SpotifyAPIError;
 use super::models::{FullTrack, PlaylistResponse, TokenResponse};
-use reqwest::{header, Client};
+use reqwest::{Client, header};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use url::Url;
@@ -20,7 +20,7 @@ impl SpotifyAPI {
         client_secret: &str,
         base_url: Option<&str>,
     ) -> Result<Self, SpotifyAPIError> {
-        let client = reqwest::Client::new();
+        let client = Client::new();
         let base_url = base_url.unwrap_or("https://api.spotify.com/v1").to_string();
 
         Ok(Self {
@@ -55,8 +55,6 @@ impl SpotifyAPI {
             .map_err(|e| SpotifyAPIError::RequestFailed(e))?;
 
         if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
             return Err(SpotifyAPIError::FailedToRetrievePlaylistTracks);
         }
 
@@ -99,7 +97,6 @@ impl SpotifyAPI {
 
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
             return Err(SpotifyAPIError::FailedToAuthenticate(status.to_string()));
         }
 
