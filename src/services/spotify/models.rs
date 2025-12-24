@@ -26,3 +26,8 @@ pub struct FullTrack {
 pub struct Artist {
     pub name: String,
 }
+
+#[derive(Deserialize)]
+pub struct PlaylistResponse {
+    pub tracks: PlaylistTracks,
+}

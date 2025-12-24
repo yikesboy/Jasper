@@ -1,12 +1,14 @@
+use reqwest::Error;
 use thiserror::Error;
 use url::Url;
+
 #[derive(Error, Debug)]
 pub enum SpotifyAPIError {
     #[error("Not a spotify link: {0}")]
     InvalidLink(Url),
 
     #[error("Malformed url: {0}")]
-    MalformedUrl(Url),
+    MalformedUrl(String),
 
     #[error("Not a playlist link: {0}")]
     NotPlaylistLink(Url),
@@ -22,4 +24,7 @@ pub enum SpotifyAPIError {
 
     #[error("Failed to retrieve playlist tracks")]
     FailedToRetrievePlaylistTracks,
+
+    #[error("Request failed: {0}")]
+    RequestFailed(Error),
 }
