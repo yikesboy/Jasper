@@ -16,3 +16,4 @@ symphonia = { version = "0.5.5", features = ["aac", "mp3", "isomp4", "alac"] }
 url = "2.5.7"
 thiserror = "2.0.17"
 dashmap = "7.0.0-rc2"
+strsim = "0.11.1"
