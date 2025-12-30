@@ -1,6 +1,6 @@
 use super::error::SpotifyAPIError;
 use super::models::{FullTrack, PlaylistResponse, TokenResponse};
-use reqwest::{Client, header};
+use reqwest::{header, Client};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use url::Url;
@@ -15,13 +15,15 @@ pub struct SpotifyAPI {
 }
 
 impl SpotifyAPI {
+    const BASE_URL: &'static str = "https://api.spotify.com/v1";
+    const TOKEN_URL: &'static str = "https://accounts.spotify.com/api/token";
     pub async fn new(
         client_id: &str,
         client_secret: &str,
         base_url: Option<&str>,
     ) -> Result<Self, SpotifyAPIError> {
         let client = Client::new();
-        let base_url = base_url.unwrap_or("https://api.spotify.com/v1").to_string();
+        let base_url = base_url.unwrap_or(Self::BASE_URL).to_string();
 
         Ok(Self {
             http: client,
@@ -34,14 +36,12 @@ impl SpotifyAPI {
 
     pub async fn get_playlist_tracks(
         &self,
-        playlist_url: &str,
+        playlist_url: Url,
     ) -> Result<Vec<FullTrack>, SpotifyAPIError> {
-        let playlist_url = Url::parse(playlist_url)
-            .map_err(|_| SpotifyAPIError::MalformedUrl(playlist_url.to_string()))?;
         let playlist_id = Self::retrieve_playlist_id(playlist_url)?;
-
         let url = format!("{}/playlists/{}", self.base_url, playlist_id);
         let filter_query = [("fields", "tracks.items(track(name,artists(name)))")];
+
         let bearer_token = self.get_bearer_token().await?;
 
         let response = self
@@ -85,10 +85,9 @@ impl SpotifyAPI {
             }
         }
 
-        let token_url = "https://accounts.spotify.com/api/token";
         let response = self
             .http
-            .post(token_url)
+            .post(Self::TOKEN_URL)
             .basic_auth(&self.client_id, Some(&self.client_secret))
             .form(&[("grant_type", "client_credentials")])
             .send()
