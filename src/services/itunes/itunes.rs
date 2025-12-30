@@ -9,9 +9,10 @@ pub struct ItunesAPI {
 }
 
 impl ItunesAPI {
+    const BASE_URL: &'static str = "https://itunes.apple.com";
     pub fn new(base_url: Option<&str>) -> Self {
         let client = Client::new();
-        let base_url = base_url.unwrap_or("https://itunes.apple.com").to_string();
+        let base_url = base_url.unwrap_or(Self::BASE_URL).to_string();
 
         Self {
             http: client,
