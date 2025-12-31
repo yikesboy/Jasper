@@ -7,6 +7,7 @@ use rand::seq::SliceRandom;
 use serenity::all::UserId;
 use std::sync::Arc;
 use strsim::normalized_levenshtein;
+use tokio::sync::Notify;
 use url::Url;
 
 enum GuessResult {
@@ -25,6 +26,7 @@ pub enum GuessOutcome {
 }
 pub struct MusicQuiz {
     session: MusicQuizSession,
+    round_complete_notify: Arc<Notify>,
     itunes: Arc<ItunesAPI>,
     spotify: Arc<SpotifyAPI>,
 }
@@ -34,9 +36,15 @@ impl MusicQuiz {
     const SIMILARITY_THRESHOLD_TRACK: f64 = 0.90;
     const SIMILARITY_THRESHOLD_ARTIST: f64 = 0.85;
 
-    pub fn new(total_rounds: u32, itunes: Arc<ItunesAPI>, spotify: Arc<SpotifyAPI>) -> Self {
+    pub fn new(
+        total_rounds: u32,
+        participants: Vec<UserId>,
+        itunes: Arc<ItunesAPI>,
+        spotify: Arc<SpotifyAPI>,
+    ) -> Self {
         Self {
-            session: MusicQuizSession::new(total_rounds),
+            session: MusicQuizSession::new(total_rounds, participants),
+            round_complete_notify: Arc::new(Notify::new()),
             itunes,
             spotify,
         }
@@ -116,6 +124,10 @@ impl MusicQuiz {
         Ok(outcome)
     }
 
+    pub fn notify_round_complete(&self) -> Arc<Notify> {
+        self.round_complete_notify.clone()
+    }
+
     fn evaluate_user_guess(guess: &str, current_track: &TrackInfo) -> GuessResult {
         let normalized_track_name = Self::normalize_string(&current_track.track_name);
         let normalized_track_artist = Self::normalize_string(&current_track.artist_name);
@@ -188,10 +200,16 @@ impl MusicQuiz {
             let search_query = format! {"{} - {}", ft.name, artists};
 
             match self.itunes.search_track(&search_query).await {
-                Ok(Some(track_info)) => result.push(track_info),
-                Ok(None) => continue,
+                Ok(Some(track_info)) if !track_info.preview_url.is_empty() => {
+                    result.push(track_info)
+                }
+                Ok(None) | Ok(Some(_)) => continue,
                 Err(e) => return Err(MusicQuizError::FetchError(e.to_string())),
             }
+        }
+
+        if self.is_round_complete() {
+            self.notify_round_complete();
         }
 
         Ok(result)
