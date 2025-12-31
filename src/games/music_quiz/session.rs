@@ -28,15 +28,17 @@ pub struct MusicQuizSession {
     pub scores: DashMap<UserId, u32>,
     pub round_number: u32,
     pub total_rounds: u32,
+    pub participants: Vec<UserId>,
 }
 
 impl MusicQuizSession {
-    pub fn new(total_rounds: u32) -> Self {
+    pub fn new(total_rounds: u32, participants: Vec<UserId>) -> Self {
         Self {
             current_round: None,
             scores: DashMap::new(),
             round_number: 0,
             total_rounds,
+            participants,
         }
     }
 
@@ -57,12 +59,12 @@ impl MusicQuizSession {
     }
 
     pub fn get_leaderboard(&self) -> Vec<(UserId, u32)> {
-        let mut scores: Vec<_> = self
-            .scores
+        let mut leaderboard: Vec<_> = self
+            .participants
             .iter()
-            .map(|entry| (*entry.key(), *entry.value()))
+            .map(|&id| (id, *self.scores.get(&id).as_deref().unwrap_or(&0)))
             .collect();
-        scores.sort_by(|a, b| b.1.cmp(&a.1));
-        scores
+        leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
+        leaderboard
     }
 }
