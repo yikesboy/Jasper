@@ -51,4 +51,7 @@ pub enum MusicQuizCommandError {
 
     #[error("Failed to join voice channel")]
     FailedToJoinVoiceChannel,
+
+    #[error("Failed to run quiz: {0}")]
+    FailedWhileRunningQuiz(String),
 }
