@@ -16,4 +16,7 @@ pub enum MusicQuizError {
 
     #[error("Failed to fetch tracks: {0}")]
     FetchError(String),
+
+    #[error("Unable to lock mutex.")]
+    UnableToLockMutex,
 }
