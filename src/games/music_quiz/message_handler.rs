@@ -1,8 +1,8 @@
-use crate::Error;
-use crate::games::music_quiz::error::MusicQuizError;
 use crate::games::music_quiz::quiz::{GuessOutcome, MusicQuiz};
+use crate::Error;
 use serenity::all::{Context, Message, ReactionType};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub async fn handle_message(
     ctx: &Context,
@@ -10,9 +10,7 @@ pub async fn handle_message(
     quiz_arc: &Arc<Mutex<MusicQuiz>>,
 ) -> Result<(), Error> {
     let outcome = {
-        let mut quiz = quiz_arc
-            .lock()
-            .map_err(|_| MusicQuizError::UnableToLockMutex)?;
+        let mut quiz = quiz_arc.lock().await;
 
         match quiz.make_guess(msg.author.id, &msg.content) {
             Ok(outcome) => outcome,
