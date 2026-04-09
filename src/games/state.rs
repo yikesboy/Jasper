@@ -1,5 +1,5 @@
 use crate::games::music_quiz::quiz::MusicQuiz;
-use crate::{games, Error};
+use crate::{games, Error as AppError};
 use dashmap::DashMap;
 use serenity::all::{GuildId, Message};
 use std::sync::Arc;
@@ -15,7 +15,7 @@ impl GameType {
         &self,
         ctx: &serenity::all::Context,
         msg: &Message,
-    ) -> Result<(), Error> {
+    ) -> Result<(), AppError> {
         match self {
             GameType::Quiz(quiz) => {
                 games::music_quiz::message_handler::handle_message(ctx, msg, &quiz).await
@@ -53,12 +53,8 @@ impl GameState {
     }
 
     pub fn get_quiz(&self, guild_id: GuildId) -> Option<Arc<Mutex<MusicQuiz>>> {
-        self.games.get(&guild_id).and_then(|game| {
-            if let GameType::Quiz(quiz) = game.value() {
-                Some(quiz.clone())
-            } else {
-                None
-            }
+        self.games.get(&guild_id).map(|game| match game.value() {
+            GameType::Quiz(quiz) => Arc::clone(quiz),
         })
     }
 
