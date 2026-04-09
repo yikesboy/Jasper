@@ -1,6 +1,6 @@
 use crate::commands::music_quiz::error::MusicQuizCommandError;
 use crate::games::music_quiz::quiz::MusicQuiz;
-use crate::services::itunes::models::TrackInfo;
+use crate::services::itunes::TrackInfo;
 use crate::{Context, Error};
 use reqwest::Client;
 use serenity::all::{ChannelId, GuildId, UserId};
@@ -25,25 +25,27 @@ pub async fn music_quiz(
     let (quiz, channel_id, tracks) = prepare_music_quiz(ctx, playlist, total_rounds).await?;
     ctx.say("🎵 Starting Music Quiz! Joining voice channel...")
         .await
-        .map_err(|e| Box::new(MusicQuizCommandError::ErrorCreatingResponse(e.to_string())))?;
+        .map_err(|e| MusicQuizCommandError::ErrorCreatingResponse(e.to_string()))?;
 
-    let guild_id = ctx.guild_id().expect("Should have GuildID");
+    let guild_id = ctx
+        .guild_id()
+        .ok_or(MusicQuizCommandError::MustBeUsedInGuild)?;
 
     let songbird = songbird::get(ctx.serenity_context())
         .await
-        .ok_or(Box::new(MusicQuizCommandError::SongbirdNotInitialized))?;
+        .ok_or(MusicQuizCommandError::SongbirdNotInitialized)?;
 
     songbird
         .join(guild_id, channel_id)
         .await
-        .map_err(|_| Box::new(MusicQuizCommandError::FailedToJoinVoiceChannel))?;
+        .map_err(|_| MusicQuizCommandError::FailedToJoinVoiceChannel)?;
 
     let quiz_arc = Arc::new(Mutex::new(quiz));
 
     ctx.data()
         .game_state
         .start_quiz(guild_id, quiz_arc.clone())
-        .map_err(|e| Box::new(MusicQuizCommandError::GameStateError(e.to_string())))?;
+        .map_err(|e| MusicQuizCommandError::GameStateError(e.to_string()))?;
 
     spawn_quiz_thread_and_run(ctx, guild_id, quiz_arc, tracks).await?;
     Ok(())
@@ -99,25 +101,25 @@ async fn prepare_music_quiz(
     ctx: Context<'_>,
     playlist: String,
     total_rounds: Option<u32>,
-) -> Result<(MusicQuiz, ChannelId, Vec<TrackInfo>), Error> {
+) -> Result<(MusicQuiz, ChannelId, Vec<TrackInfo>), MusicQuizCommandError> {
     let spotify_playlist =
-        Url::parse(&playlist).map_err(|_| Box::new(MusicQuizCommandError::InvalidURL(playlist)))?;
+        Url::parse(&playlist).map_err(|_| MusicQuizCommandError::InvalidURL(playlist))?;
 
     let total_rounds = total_rounds.unwrap_or(TOTAL_ROUNDS_DEFAULT);
 
     let guild_id = ctx
         .guild_id()
-        .ok_or(Box::new(MusicQuizCommandError::MustBeUsedInGuild))?;
+        .ok_or(MusicQuizCommandError::MustBeUsedInGuild)?;
 
     if ctx.data().game_state.games.contains_key(&guild_id) {
-        return Err(Box::new(MusicQuizCommandError::GameAlreadyRunningInGuild));
+        return Err(MusicQuizCommandError::GameAlreadyRunningInGuild);
     }
 
     let channel_id = get_user_voice_channel(&ctx, guild_id, ctx.author().id).await?;
 
     let participants = get_voice_channel_participants(&ctx, guild_id, channel_id).await?;
     if participants.is_empty() {
-        return Err(Box::new(MusicQuizCommandError::ToFewUsersInChannel));
+        return Err(MusicQuizCommandError::ToFewUsersInChannel);
     }
 
     let quiz = MusicQuiz::new(
@@ -198,7 +200,7 @@ async fn get_voice_channel_participants(
     channel_id: ChannelId,
 ) -> Result<Vec<UserId>, MusicQuizCommandError> {
     let guild = guild_id
-        .to_guild_cached(context.cache())
+        .to_guild_cached(&context.serenity_context().cache)
         .ok_or(MusicQuizCommandError::GuildNotCached)?;
 
     Ok(guild
