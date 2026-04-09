@@ -13,18 +13,23 @@ pub struct Config {
 
 #[derive(Clone, PartialEq)]
 pub enum Environment {
-    DEV,
-    PROD,
+    Development,
+    Production,
 }
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
-        let environment = match Self::read_in_env_var(EnvVar::Environment)?.as_str() {
-            "development" => Environment::DEV,
-            _ => Environment::PROD,
+        let environment = match Self::read_any_env_var(&[EnvVar::Environment.key()])?
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "dev" | "development" => Environment::Development,
+            "prod" | "production" => Environment::Production,
+            value => return Err(ConfigError::InvalidEnvironment(value.to_string())),
         };
 
-        let discord_testing_guild_id = if environment == Environment::DEV {
-            let guild_id = Self::read_in_env_var(EnvVar::DiscordTestingGuildId)?;
+        let discord_testing_guild_id = if environment == Environment::Development {
+            let guild_id =
+                Self::read_any_env_var(&[EnvVar::DiscordTestingGuildId.key(), "TESTING_GUILD_ID"])?;
             Some(
                 guild_id
                     .parse()
@@ -44,11 +49,17 @@ impl Config {
     }
 
     pub fn is_dev(&self) -> bool {
-        self.environment.eq(&Environment::DEV)
+        self.environment.eq(&Environment::Development)
     }
 
     fn read_in_env_var(env_var: EnvVar) -> Result<String, ConfigError> {
         env::var(env_var.key())
             .map_err(|_| ConfigError::MissingEnvironmentVariable(env_var.key().to_string()))
+    }
+
+    fn read_any_env_var(keys: &[&str]) -> Result<String, ConfigError> {
+        keys.iter()
+            .find_map(|key| env::var(key).ok())
+            .ok_or_else(|| ConfigError::MissingEnvironmentVariable(keys.join(" or ")))
     }
 }
