@@ -34,7 +34,7 @@ pub async fn start_from_command(
 
     ctx.say("🎵 Starting Music Quiz! Joining voice channel...")
         .await
-        .map_err(|e| MusicQuizCommandError::ErrorCreatingResponse(e.to_string()))?;
+        .map_err(MusicQuizCommandError::ErrorCreatingResponse)?;
 
     runtime.start(prepared).await
 }
@@ -82,13 +82,12 @@ impl QuizRuntime {
             .await
             .ok_or(MusicQuizCommandError::SongbirdNotInitialized)?;
 
-        if songbird
+        if let Err(error) = songbird
             .join(self.guild_id, prepared.voice_channel_id)
             .await
-            .is_err()
         {
             self.game_state.end_game(self.guild_id);
-            return Err(MusicQuizCommandError::FailedToJoinVoiceChannel);
+            return Err(MusicQuizCommandError::FailedToJoinVoiceChannel(error));
         }
 
         self.spawn_run_task(quiz, prepared.tracks);
@@ -97,10 +96,7 @@ impl QuizRuntime {
 
     fn spawn_run_task(self, quiz: Arc<Mutex<MusicQuiz>>, tracks: Vec<TrackInfo>) {
         tokio::spawn(async move {
-            let result = self
-                .run(Arc::clone(&quiz), tracks)
-                .await
-                .map_err(|e| MusicQuizCommandError::FailedWhileRunningQuiz(e.to_string()));
+            let result = self.run(Arc::clone(&quiz), tracks).await;
 
             let _ = self.leave_voice_channel().await;
             self.game_state.end_game(self.guild_id);
@@ -156,7 +152,7 @@ impl QuizRuntime {
                 ),
             )
             .await
-            .map_err(|e| MusicQuizCommandError::SendingMessageFailed(e.to_string()))?;
+            .map_err(MusicQuizCommandError::SendingMessageFailed)?;
 
         Ok(())
     }
@@ -196,7 +192,7 @@ impl QuizRuntime {
                 ),
             )
             .await
-            .map_err(|e| MusicQuizCommandError::SendingMessageFailed(e.to_string()))?;
+            .map_err(MusicQuizCommandError::SendingMessageFailed)?;
 
         Ok(())
     }
@@ -233,7 +229,7 @@ impl QuizRuntime {
                 ),
             )
             .await
-            .map_err(|e| MusicQuizCommandError::SendingMessageFailed(e.to_string()))?;
+            .map_err(MusicQuizCommandError::SendingMessageFailed)?;
 
         Ok(())
     }
@@ -253,7 +249,7 @@ impl QuizRuntime {
                 ),
             )
             .await
-            .map_err(|e| MusicQuizCommandError::SendingMessageFailed(e.to_string()))?;
+            .map_err(MusicQuizCommandError::SendingMessageFailed)?;
 
         Ok(())
     }
@@ -299,7 +295,7 @@ impl QuizRuntime {
         songbird
             .leave(self.guild_id)
             .await
-            .map_err(|e| MusicQuizCommandError::CouldNotLeaveChannel(e.to_string()))?;
+            .map_err(MusicQuizCommandError::CouldNotLeaveChannel)?;
 
         Ok(())
     }
@@ -311,7 +307,7 @@ async fn prepare_quiz(
     total_rounds: Option<u32>,
 ) -> Result<PreparedMusicQuiz, MusicQuizCommandError> {
     let spotify_playlist =
-        Url::parse(&playlist).map_err(|_| MusicQuizCommandError::InvalidURL(playlist))?;
+        Url::parse(&playlist).map_err(MusicQuizCommandError::InvalidUrl)?;
 
     let guild_id = ctx
         .guild_id()
@@ -333,8 +329,7 @@ async fn prepare_quiz(
 
     let tracks = quiz
         .fetch_random_tracks_from_playlist(spotify_playlist, total_rounds)
-        .await
-        .map_err(|e| MusicQuizCommandError::MusicQuizError(e.to_string()))?;
+        .await?;
 
     Ok(PreparedMusicQuiz {
         quiz,
