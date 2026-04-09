@@ -1,17 +1,13 @@
 use thiserror::Error;
-use url::Url;
 
 #[derive(Error, Debug)]
 pub enum ITunesAPIError {
-    #[error("Not a spotify link: {0}")]
-    InvalidLink(Url),
-
     #[error("Request failed: {0}")]
-    RequestFailed(reqwest::Error),
+    RequestFailed(#[source] reqwest::Error),
 
     #[error("Request unsuccessful")]
     RequestUnsuccessful,
 
-    #[error("Invalid response body")]
-    InvalidResponseBody,
+    #[error("Invalid response body: {0}")]
+    InvalidResponseBody(#[source] reqwest::Error),
 }

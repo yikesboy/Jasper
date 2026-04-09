@@ -44,13 +44,13 @@ impl ItunesAPI {
         let data: ITunesSearchResponse = response
             .json()
             .await
-            .map_err(|_| ITunesAPIError::InvalidResponseBody)?;
+            .map_err(ITunesAPIError::InvalidResponseBody)?;
 
         Ok(data.results.first().map(|track| TrackInfo {
             track_name: track.track_name.clone(),
             artist_name: track.artist_name.clone(),
             preview_url: track.preview_url.clone(),
-            is_streamable: track.is_streamable.clone(),
+            is_streamable: track.is_streamable,
         }))
     }
 }
