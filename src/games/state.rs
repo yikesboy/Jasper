@@ -1,5 +1,6 @@
 use crate::games::music_quiz::quiz::MusicQuiz;
 use crate::{games, Error as AppError};
+use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use serenity::all::{GuildId, Message};
 use std::sync::Arc;
@@ -45,11 +46,13 @@ impl GameState {
         guild_id: GuildId,
         quiz: Arc<Mutex<MusicQuiz>>,
     ) -> Result<(), GameStateError> {
-        if self.games.contains_key(&guild_id) {
-            return Err(GameStateError::GameAlreadyActiveInServer);
+        match self.games.entry(guild_id) {
+            Entry::Occupied(_) => Err(GameStateError::GameAlreadyActiveInServer),
+            Entry::Vacant(entry) => {
+                entry.insert(GameType::Quiz(quiz));
+                Ok(())
+            }
         }
-        self.games.insert(guild_id, GameType::Quiz(quiz));
-        Ok(())
     }
 
     pub fn get_quiz(&self, guild_id: GuildId) -> Option<Arc<Mutex<MusicQuiz>>> {
