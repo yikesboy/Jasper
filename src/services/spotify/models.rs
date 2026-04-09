@@ -7,13 +7,14 @@ pub struct TokenResponse {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct PlaylistTracks {
+pub struct PlaylistPage {
     pub items: Vec<PlaylistItem>,
+    pub next: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct PlaylistItem {
-    pub track: FullTrack,
+    pub track: Option<FullTrack>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -25,9 +26,4 @@ pub struct FullTrack {
 #[derive(Deserialize, Debug)]
 pub struct Artist {
     pub name: String,
-}
-
-#[derive(Deserialize)]
-pub struct PlaylistResponse {
-    pub tracks: PlaylistTracks,
 }
