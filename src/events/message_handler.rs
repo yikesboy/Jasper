@@ -1,12 +1,13 @@
 use crate::games::state::GameState;
+use crate::AppError;
 use serenity::all::{Context, Message};
 use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum MessageEventError {
-    #[error("Game handler error: {0}")]
-    GameHandlerError(String),
+    #[error("Game handler error")]
+    GameHandlerError(#[source] Box<AppError>),
 }
 
 pub async fn handle_message(
@@ -27,7 +28,7 @@ pub async fn handle_message(
         game.value()
             .handle_message(ctx, msg)
             .await
-            .map_err(|e| MessageEventError::GameHandlerError(e.to_string()))?;
+            .map_err(|error| MessageEventError::GameHandlerError(Box::new(error)))?;
     }
 
     Ok(())
