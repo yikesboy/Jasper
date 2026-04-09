@@ -71,7 +71,7 @@ impl SpotifyAPI {
             let page: PlaylistPage = response
                 .json()
                 .await
-                .map_err(|_| SpotifyAPIError::FailedToRetrievePlaylistTracks)?;
+                .map_err(SpotifyAPIError::InvalidPlaylistResponse)?;
 
             tracks.extend(page.items.into_iter().filter_map(|item| item.track));
             next_page_url = page.next;
@@ -85,7 +85,7 @@ impl SpotifyAPI {
             let token_guard = self
                 .bearer_token
                 .read()
-                .map_err(|e| SpotifyAPIError::FailedToAuthenticate(e.to_string()))?;
+                .map_err(|e| SpotifyAPIError::AuthenticationStatePoisoned(e.to_string()))?;
 
             if let Some((token, expires_at)) = &*token_guard {
                 if expires_at > &Instant::now() {
@@ -101,17 +101,17 @@ impl SpotifyAPI {
             .form(&[("grant_type", "client_credentials")])
             .send()
             .await
-            .map_err(|e| SpotifyAPIError::FailedToAuthenticate(e.to_string()))?;
+            .map_err(SpotifyAPIError::AuthenticationRequestFailed)?;
 
         let status = response.status();
         if !status.is_success() {
-            return Err(SpotifyAPIError::FailedToAuthenticate(status.to_string()));
+            return Err(SpotifyAPIError::AuthenticationRejected(status));
         }
 
         let token_response: TokenResponse = response
             .json()
             .await
-            .map_err(|e| SpotifyAPIError::FailedToAuthenticate(e.to_string()))?;
+            .map_err(SpotifyAPIError::AuthenticationResponseInvalid)?;
 
         let expires_at = Instant::now() + Duration::from_secs(token_response.expires_in as u64);
 
@@ -119,7 +119,7 @@ impl SpotifyAPI {
             let mut token_guard = self
                 .bearer_token
                 .write()
-                .map_err(|e| SpotifyAPIError::FailedToAuthenticate(e.to_string()))?;
+                .map_err(|e| SpotifyAPIError::AuthenticationStatePoisoned(e.to_string()))?;
             *token_guard = Some((token_response.access_token.clone(), expires_at));
         }
 

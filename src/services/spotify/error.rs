@@ -1,4 +1,5 @@
 use reqwest::Error;
+use reqwest::StatusCode;
 use thiserror::Error;
 use url::Url;
 
@@ -19,12 +20,24 @@ pub enum SpotifyAPIError {
     #[error("Playlist Id Missing")]
     PlaylistIdMissing,
 
-    #[error("Failed to authenticate: {0}")]
-    FailedToAuthenticate(String),
+    #[error("Failed to read authentication state: {0}")]
+    AuthenticationStatePoisoned(String),
+
+    #[error("Authentication request failed: {0}")]
+    AuthenticationRequestFailed(#[source] Error),
+
+    #[error("Authentication rejected with status {0}")]
+    AuthenticationRejected(StatusCode),
+
+    #[error("Invalid authentication response: {0}")]
+    AuthenticationResponseInvalid(#[source] Error),
 
     #[error("Failed to retrieve playlist tracks")]
     FailedToRetrievePlaylistTracks,
 
+    #[error("Invalid playlist response: {0}")]
+    InvalidPlaylistResponse(#[source] Error),
+
     #[error("Request failed: {0}")]
-    RequestFailed(Error),
+    RequestFailed(#[source] Error),
 }
