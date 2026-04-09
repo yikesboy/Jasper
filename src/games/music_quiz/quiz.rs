@@ -121,6 +121,11 @@ impl MusicQuiz {
             },
             GuessResult::Neither => GuessOutcome::Wrong,
         };
+
+        if self.is_round_complete() {
+            self.round_complete_notify.notify_waiters();
+        }
+
         Ok(outcome)
     }
 
@@ -208,8 +213,11 @@ impl MusicQuiz {
             }
         }
 
-        if self.is_round_complete() {
-            self.notify_round_complete();
+        if result.len() < count as usize {
+            return Err(MusicQuizError::PlaylistContainsNotEnoughPreviewableSongs {
+                expected: count,
+                actual: result.len() as u32,
+            });
         }
 
         Ok(result)
