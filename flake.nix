@@ -21,6 +21,7 @@
         default = pkgs.mkShell {
           packages = with pkgs; [
             cmake
+            libopus
             pkg-config
           ];
         };
