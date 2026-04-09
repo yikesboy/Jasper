@@ -1,131 +1,130 @@
+mod commands;
+mod config;
+mod events;
+mod games;
 mod services;
 
+use crate::commands::MusicQuizCommandError;
+use crate::config::{Config, ConfigError};
+use crate::events::{MessageEventError, handle_message};
+use crate::games::state::GameState;
+use crate::services::itunes::ItunesAPI;
+use crate::services::spotify::{SpotifyAPI, SpotifyAPIError};
 use dotenvy::dotenv;
 use poise::builtins::{register_globally, register_in_guild};
 use poise::{Framework, FrameworkOptions};
 use serenity::Client;
-use serenity::all::{GatewayIntents, GuildId};
-use services::itunes::search_track;
+use serenity::all::{FullEvent, GatewayIntents, GuildId};
 use songbird::SerenityInit;
-use songbird::input::HttpRequest;
-use std::env;
+use std::sync::Arc;
+use thiserror::Error;
 
-pub struct Data {}
-type Error = Box<dyn std::error::Error + Send + Sync>;
+#[derive(Clone)]
+pub struct Data {
+    pub game_state: Arc<GameState>,
+    pub itunes: Arc<ItunesAPI>,
+    pub spotify: Arc<SpotifyAPI>,
+}
+
+#[derive(Debug, Error)]
+pub enum AppError {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+
+    #[error(transparent)]
+    Serenity(#[from] serenity::Error),
+
+    #[error(transparent)]
+    Spotify(#[from] SpotifyAPIError),
+
+    #[error(transparent)]
+    MusicQuizCommand(#[from] MusicQuizCommandError),
+
+    #[error(transparent)]
+    MessageEvent(#[from] MessageEventError),
+}
+
+type Error = AppError;
 type Context<'a> = poise::Context<'a, Data, Error>;
+
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Error> {
     dotenv().ok();
 
-    let discord_token = env::var("DISCORD_TOKEN").expect("DISCORD_TOKEN is missing");
-    let is_dev = env::var("ENVIRONMENT")
-        .expect("ENVIRONMENT is missing")
-        .to_lowercase()
-        == "dev";
+    let config = Config::from_env()?;
 
-    let framework: Framework<Data, Error> = create_framework(is_dev);
-    let intents = GatewayIntents::non_privileged();
-    let mut client = Client::builder(discord_token, intents)
+    let framework = create_framework(config.clone());
+    let intents = GatewayIntents::non_privileged()
+        | GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::GUILD_VOICE_STATES
+        | GatewayIntents::MESSAGE_CONTENT;
+    let mut client = Client::builder(&config.discord_token, intents)
         .framework(framework)
         .register_songbird()
-        .await
-        .expect("Failed to create client");
+        .await?;
 
-    client.start().await.expect("Failed to start client");
-}
-
-#[poise::command(slash_command, prefix_command)]
-async fn ping(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.say("Pong!").await?;
+    client.start().await?;
     Ok(())
 }
 
-#[poise::command(slash_command)]
-pub async fn play_preview(
-    ctx: Context<'_>,
-    #[description = "Name of the song to preview"] query: String,
-) -> Result<(), Error> {
-    ctx.defer().await?;
-
-    let track_info = search_track(query.as_str()).await;
-    let track_info = match track_info {
-        Ok(Some(track_info)) => track_info,
-        Ok(None) => {
-            ctx.say("Track not found").await?;
-            return Ok(());
-        }
-        Err(e) => {
-            ctx.say("Error occurred while search for the track.")
-                .await?;
-            return Ok(());
-        }
-    };
-
-    let channel_id = {
-        let guild = ctx.guild().unwrap();
-        guild
-            .voice_states
-            .get(&ctx.author().id)
-            .and_then(|voice_state| voice_state.channel_id)
-    };
-
-    let connect_to = match channel_id {
-        Some(channel) => channel,
-        None => {
-            ctx.say("You need to be in a voice channel first!").await?;
-            return Ok(());
-        }
-    };
-
-    let manager = songbird::get(ctx.serenity_context())
-        .await
-        .expect("Songbird Voice client");
-
-    let handler_lock = manager.join(ctx.guild_id().unwrap(), connect_to).await;
-    let handler_lock = match handler_lock {
-        Ok(handler) => handler,
-        Err(e) => {
-            ctx.say(format!("Failed to join channel: {:?}", e)).await?;
-            return Ok(());
-        }
-    };
-
-    let mut handler = handler_lock.lock().await;
-
-    let client = reqwest::Client::new();
-    let source = HttpRequest::new(client, track_info.preview_url.to_string());
-
-    handler.play_input(source.into());
-
-    ctx.say(format!(
-        "🎶 Playing preview for **{}**",
-        track_info.track_name
-    ))
-    .await?;
-
-    Ok(())
-}
-
-fn create_framework(is_dev: bool) -> Framework<Data, Error> {
+fn create_framework(config: Config) -> Framework<Data, Error> {
     Framework::builder()
         .options(FrameworkOptions {
-            commands: vec![ping(), play_preview()],
+            commands: commands::get_commands(),
+            event_handler: |ctx, event, _framework, data| {
+                Box::pin(async move { handle_discord_event(ctx, event, data).await })
+            },
             ..Default::default()
         })
         .setup(move |context, _ready, framework| {
+            let config = config.clone();
             let commands = &framework.options().commands;
             Box::pin(async move {
-                if is_dev {
-                    let testing_guild_id: u64 = env::var("TESTING_GUILD_ID")
-                        .expect("TESTING_GUILD_ID is missing")
-                        .parse()
-                        .expect("TESTING_GUILD_ID has wrong format");
-                    register_in_guild(context, commands, GuildId::new(testing_guild_id)).await?;
-                } else {
-                    register_globally(context, commands).await?;
-                }
-                Ok(Data {})
+                register_commands(context, &config, commands).await?;
+
+                let spotify = SpotifyAPI::new(
+                    &config.spotify_client_id,
+                    &config.spotify_client_secret,
+                    None,
+                )
+                .await?;
+
+                Ok(Data {
+                    game_state: Arc::new(GameState::new()),
+                    itunes: Arc::new(ItunesAPI::new(None)),
+                    spotify: Arc::new(spotify),
+                })
             })
         })
         .build()
+}
+
+async fn register_commands(
+    context: &serenity::all::Context,
+    config: &Config,
+    commands: &[poise::Command<Data, Error>],
+) -> Result<(), Error> {
+    if config.is_dev() {
+        let guild_id = config
+            .discord_testing_guild_id
+            .ok_or_else(|| ConfigError::MissingEnvironmentVariable("DISCORD_TESTING_GUILD_ID".to_string()))?;
+
+        register_in_guild(context, commands, GuildId::new(guild_id)).await?;
+    } else {
+        register_globally(context, commands).await?;
+    }
+
+    Ok(())
+}
+
+async fn handle_discord_event(
+    ctx: &serenity::all::Context,
+    event: &FullEvent,
+    data: &Data,
+) -> Result<(), Error> {
+    if let FullEvent::Message { new_message } = event {
+        handle_message(ctx, new_message, Arc::clone(&data.game_state)).await?;
+    }
+
+    Ok(())
 }
