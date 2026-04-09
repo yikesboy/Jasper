@@ -7,4 +7,7 @@ pub enum ConfigError {
 
     #[error("Failed to parse: {0}")]
     FailedToParse(String),
+
+    #[error("Invalid environment: {0}")]
+    InvalidEnvironment(String),
 }
