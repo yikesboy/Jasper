@@ -3,3 +3,4 @@ pub mod error;
 pub mod models;
 
 pub use client::SpotifyAPI;
+pub use error::SpotifyAPIError;
