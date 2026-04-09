@@ -178,7 +178,7 @@ impl MusicQuiz {
             .spotify
             .get_playlist_tracks(playlist_link)
             .await
-            .map_err(|e| MusicQuizError::FailedToFetchTracksFromPlaylist(e.to_string()))?;
+            .map_err(MusicQuizError::FailedToFetchTracksFromPlaylist)?;
 
         if track_list.is_empty() || track_list.len() < count as usize {
             return Err(MusicQuizError::PlaylistContainsNotEnoughSongs {
@@ -209,7 +209,7 @@ impl MusicQuiz {
                     result.push(track_info)
                 }
                 Ok(None) | Ok(Some(_)) => continue,
-                Err(e) => return Err(MusicQuizError::FetchError(e.to_string())),
+                Err(error) => return Err(MusicQuizError::FetchError(error)),
             }
         }
 
