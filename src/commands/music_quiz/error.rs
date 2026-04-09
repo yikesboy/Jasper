@@ -1,4 +1,9 @@
+use crate::games::music_quiz::MusicQuizError;
+use serenity::Error as SerenityError;
+use songbird::error::JoinError;
 use thiserror::Error;
+use url::ParseError;
+
 #[derive(Error, Debug)]
 pub enum MusicQuizCommandError {
     #[error("Unable to get ChannelID")]
@@ -17,22 +22,19 @@ pub enum MusicQuizCommandError {
     SongbirdCallDoesNotExist,
 
     #[error("Sending message failed: {0}")]
-    SendingMessageFailed(String),
+    SendingMessageFailed(#[source] SerenityError),
 
-    #[error("Music quiz error: {0}")]
-    MusicQuizError(String),
+    #[error(transparent)]
+    MusicQuiz(#[from] MusicQuizError),
 
     #[error("Could not leave channel: {0}")]
-    CouldNotLeaveChannel(String),
+    CouldNotLeaveChannel(#[source] JoinError),
 
     #[error("Invalid URL: {0}")]
-    InvalidURL(String),
+    InvalidUrl(#[source] ParseError),
 
     #[error("Error creating response: {0}")]
-    ErrorCreatingResponse(String),
-
-    #[error("GameState error: {0}")]
-    GameStateError(String),
+    ErrorCreatingResponse(#[source] SerenityError),
 
     #[error("Playlist URL not provided")]
     PlaylistUrlNotProvided,
@@ -49,9 +51,6 @@ pub enum MusicQuizCommandError {
     #[error("Too few users in channel.")]
     ToFewUsersInChannel,
 
-    #[error("Failed to join voice channel")]
-    FailedToJoinVoiceChannel,
-
-    #[error("Failed to run quiz: {0}")]
-    FailedWhileRunningQuiz(String),
+    #[error("Failed to join voice channel: {0}")]
+    FailedToJoinVoiceChannel(#[source] JoinError),
 }
