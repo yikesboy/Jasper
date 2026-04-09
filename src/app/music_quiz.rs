@@ -1,6 +1,6 @@
 use crate::commands::MusicQuizCommandError;
 use crate::games::music_quiz::quiz::MusicQuiz;
-use crate::games::state::GameState;
+use crate::games::state::{GameState, GameStateError};
 use crate::services::itunes::TrackInfo;
 use crate::Context;
 use reqwest::Client;
@@ -68,20 +68,28 @@ impl QuizRuntime {
     }
 
     async fn start(self, prepared: PreparedMusicQuiz) -> Result<(), MusicQuizCommandError> {
-        let songbird = songbird::get(&self.serenity_ctx)
-            .await
-            .ok_or(MusicQuizCommandError::SongbirdNotInitialized)?;
-
-        songbird
-            .join(self.guild_id, prepared.voice_channel_id)
-            .await
-            .map_err(|_| MusicQuizCommandError::FailedToJoinVoiceChannel)?;
-
         let quiz = Arc::new(Mutex::new(prepared.quiz));
 
         self.game_state
             .start_quiz(self.guild_id, Arc::clone(&quiz))
-            .map_err(|e| MusicQuizCommandError::GameStateError(e.to_string()))?;
+            .map_err(|error| match error {
+                GameStateError::GameAlreadyActiveInServer => {
+                    MusicQuizCommandError::GameAlreadyRunningInGuild
+                }
+            })?;
+
+        let songbird = songbird::get(&self.serenity_ctx)
+            .await
+            .ok_or(MusicQuizCommandError::SongbirdNotInitialized)?;
+
+        if songbird
+            .join(self.guild_id, prepared.voice_channel_id)
+            .await
+            .is_err()
+        {
+            self.game_state.end_game(self.guild_id);
+            return Err(MusicQuizCommandError::FailedToJoinVoiceChannel);
+        }
 
         self.spawn_run_task(quiz, prepared.tracks);
         Ok(())
@@ -308,10 +316,6 @@ async fn prepare_quiz(
     let guild_id = ctx
         .guild_id()
         .ok_or(MusicQuizCommandError::MustBeUsedInGuild)?;
-
-    if ctx.data().game_state.games.contains_key(&guild_id) {
-        return Err(MusicQuizCommandError::GameAlreadyRunningInGuild);
-    }
 
     let voice_channel_id = get_user_voice_channel(ctx, guild_id, ctx.author().id)?;
     let participants = get_voice_channel_participants(ctx, guild_id, voice_channel_id)?;
