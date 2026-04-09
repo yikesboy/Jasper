@@ -1,5 +1,5 @@
 use super::error::SpotifyAPIError;
-use super::models::{FullTrack, PlaylistResponse, TokenResponse};
+use super::models::{FullTrack, PlaylistPage, TokenResponse};
 use reqwest::{header, Client};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -39,36 +39,45 @@ impl SpotifyAPI {
         playlist_url: Url,
     ) -> Result<Vec<FullTrack>, SpotifyAPIError> {
         let playlist_id = Self::retrieve_playlist_id(playlist_url)?;
-        let url = format!("{}/playlists/{}", self.base_url, playlist_id);
-        let filter_query = [("fields", "tracks.items(track(name,artists(name)))")];
-
+        let initial_page_url = format!("{}/playlists/{}/tracks", self.base_url, playlist_id);
+        let mut next_page_url = Some(initial_page_url.clone());
         let bearer_token = self.get_bearer_token().await?;
+        let mut tracks = Vec::new();
 
-        let response = self
-            .http
-            .get(&url)
-            .query(&filter_query)
-            .bearer_auth(bearer_token)
-            .header(header::ACCEPT, "application/json")
-            .send()
-            .await
-            .map_err(|e| SpotifyAPIError::RequestFailed(e))?;
+        while let Some(page_url) = next_page_url.take() {
+            let request = self
+                .http
+                .get(&page_url)
+                .bearer_auth(&bearer_token)
+                .header(header::ACCEPT, "application/json");
 
-        if !response.status().is_success() {
-            return Err(SpotifyAPIError::FailedToRetrievePlaylistTracks);
+            let response = if page_url == initial_page_url {
+                request
+                    .query(&[
+                        ("fields", "items(track(name,artists(name))),next"),
+                        ("limit", "100"),
+                    ])
+                    .send()
+                    .await
+            } else {
+                request.send().await
+            }
+            .map_err(SpotifyAPIError::RequestFailed)?;
+
+            if !response.status().is_success() {
+                return Err(SpotifyAPIError::FailedToRetrievePlaylistTracks);
+            }
+
+            let page: PlaylistPage = response
+                .json()
+                .await
+                .map_err(|_| SpotifyAPIError::FailedToRetrievePlaylistTracks)?;
+
+            tracks.extend(page.items.into_iter().filter_map(|item| item.track));
+            next_page_url = page.next;
         }
 
-        let playlist_data: PlaylistResponse = response
-            .json()
-            .await
-            .map_err(|_| SpotifyAPIError::FailedToRetrievePlaylistTracks)?;
-
-        Ok(playlist_data
-            .tracks
-            .items
-            .into_iter()
-            .map(|item| item.track)
-            .collect())
+        Ok(tracks)
     }
 
     async fn get_bearer_token(&self) -> Result<String, SpotifyAPIError> {
