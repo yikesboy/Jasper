@@ -1,8 +1,9 @@
 use super::error::SpotifyAPIError;
 use super::models::{FullTrack, PlaylistPage, TokenResponse};
 use reqwest::{header, Client};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 use url::Url;
 
 #[derive(Clone)]
@@ -82,10 +83,7 @@ impl SpotifyAPI {
 
     async fn get_bearer_token(&self) -> Result<String, SpotifyAPIError> {
         {
-            let token_guard = self
-                .bearer_token
-                .read()
-                .map_err(|e| SpotifyAPIError::AuthenticationStatePoisoned(e.to_string()))?;
+            let token_guard = self.bearer_token.read().await;
 
             if let Some((token, expires_at)) = &*token_guard {
                 if expires_at > &Instant::now() {
@@ -116,10 +114,7 @@ impl SpotifyAPI {
         let expires_at = Instant::now() + Duration::from_secs(token_response.expires_in as u64);
 
         {
-            let mut token_guard = self
-                .bearer_token
-                .write()
-                .map_err(|e| SpotifyAPIError::AuthenticationStatePoisoned(e.to_string()))?;
+            let mut token_guard = self.bearer_token.write().await;
             *token_guard = Some((token_response.access_token.clone(), expires_at));
         }
 

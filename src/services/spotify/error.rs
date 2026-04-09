@@ -20,9 +20,6 @@ pub enum SpotifyAPIError {
     #[error("Playlist Id Missing")]
     PlaylistIdMissing,
 
-    #[error("Failed to read authentication state: {0}")]
-    AuthenticationStatePoisoned(String),
-
     #[error("Authentication request failed: {0}")]
     AuthenticationRequestFailed(#[source] Error),
 
