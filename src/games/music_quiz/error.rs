@@ -14,6 +14,9 @@ pub enum MusicQuizError {
     #[error("Playlist contains not enough songs. Expected: {expected} Actual: {actual}")]
     PlaylistContainsNotEnoughSongs { expected: u32, actual: u32 },
 
+    #[error("Playlist contains not enough previewable songs. Expected: {expected} Actual: {actual}")]
+    PlaylistContainsNotEnoughPreviewableSongs { expected: u32, actual: u32 },
+
     #[error("Failed to fetch tracks: {0}")]
     FetchError(String),
 
