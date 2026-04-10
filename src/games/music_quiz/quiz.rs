@@ -63,56 +63,56 @@ impl MusicQuiz {
         user_id: UserId,
         guess: &str,
     ) -> Result<GuessOutcome, MusicQuizError> {
-        let round = match self.session.current_round.as_mut() {
+        let round = match self.session.current_round_mut() {
             Some(round) => round,
             None => return Err(MusicQuizError::NoRoundInProgress),
         };
-        let guess_result = Self::evaluate_user_guess(guess, &round.track);
+        let guess_result = Self::evaluate_user_guess(guess, round.track());
 
         let outcome = match guess_result {
-            GuessResult::Both => match (round.track_guessed_by, round.artist_guessed_by) {
+            GuessResult::Both => match (round.track_guessed_by(), round.artist_guessed_by()) {
                 (None, None) => {
-                    round.artist_guessed_by = Some(user_id);
-                    round.track_guessed_by = Some(user_id);
+                    round.set_artist_guessed_by(user_id);
+                    round.set_track_guessed_by(user_id);
                     self.session.add_score(user_id, 3);
                     GuessOutcome::Both { points: 3 }
                 }
                 (Some(_), None) => {
-                    round.track_guessed_by = Some(user_id);
+                    round.set_track_guessed_by(user_id);
                     self.session.add_score(user_id, 1);
                     GuessOutcome::Track { points: 1 }
                 }
                 (None, Some(_)) => {
-                    round.artist_guessed_by = Some(user_id);
+                    round.set_artist_guessed_by(user_id);
                     self.session.add_score(user_id, 1);
                     GuessOutcome::Artist { points: 1 }
                 }
                 (Some(_), Some(_)) => GuessOutcome::AlreadyGuessed,
             },
-            GuessResult::TrackOnly => match round.track_guessed_by {
+            GuessResult::TrackOnly => match round.track_guessed_by() {
                 Some(_) => GuessOutcome::AlreadyGuessed,
                 None => {
-                    let points = if round.artist_guessed_by == Some(user_id) {
-                        round.track_guessed_by = Some(user_id);
+                    let points = if round.artist_guessed_by() == Some(user_id) {
+                        round.set_track_guessed_by(user_id);
                         self.session.add_score(user_id, 2);
                         3
                     } else {
-                        round.track_guessed_by = Some(user_id);
+                        round.set_track_guessed_by(user_id);
                         self.session.add_score(user_id, 1);
                         1
                     };
                     GuessOutcome::Track { points }
                 }
             },
-            GuessResult::ArtistOnly => match round.artist_guessed_by {
+            GuessResult::ArtistOnly => match round.artist_guessed_by() {
                 Some(_) => GuessOutcome::AlreadyGuessed,
                 None => {
-                    let points = if round.track_guessed_by == Some(user_id) {
-                        round.artist_guessed_by = Some(user_id);
+                    let points = if round.track_guessed_by() == Some(user_id) {
+                        round.set_artist_guessed_by(user_id);
                         self.session.add_score(user_id, 2);
                         3
                     } else {
-                        round.artist_guessed_by = Some(user_id);
+                        round.set_artist_guessed_by(user_id);
                         self.session.add_score(user_id, 1);
                         1
                     };
@@ -224,8 +224,8 @@ impl MusicQuiz {
     }
 
     pub fn is_round_complete(&self) -> bool {
-        if let Some(round) = &self.session.current_round {
-            round.artist_guessed_by.is_some() && round.track_guessed_by.is_some()
+        if let Some(round) = self.session.current_round() {
+            round.is_complete()
         } else {
             false
         }
