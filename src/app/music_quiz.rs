@@ -136,8 +136,8 @@ impl QuizRuntime {
         let (round_number, total_rounds) = {
             let locked_quiz = quiz.lock().await;
             (
-                locked_quiz.session().round_number,
-                locked_quiz.session().total_rounds,
+                locked_quiz.session().round_number(),
+                locked_quiz.session().total_rounds(),
             )
         };
 
@@ -163,21 +163,21 @@ impl QuizRuntime {
     ) -> Result<(), MusicQuizCommandError> {
         let locked_quiz = quiz.lock().await;
 
-        let round = match &locked_quiz.session().current_round {
+        let round = match locked_quiz.session().current_round() {
             Some(round) => round,
             None => return Ok(()),
         };
 
         let mut description = format!(
             "**Song:** {} by {}\n\n",
-            round.track.track_name, round.track.artist_name
+            round.track().track_name, round.track().artist_name
         );
 
-        if let Some(artist_guesser) = round.artist_guessed_by {
+        if let Some(artist_guesser) = round.artist_guessed_by() {
             description.push_str(&format!("🎤 Artist guessed by <@{}>\n", artist_guesser));
         }
 
-        if let Some(track_guesser) = round.track_guessed_by {
+        if let Some(track_guesser) = round.track_guessed_by() {
             description.push_str(&format!("🎵 Track guessed by <@{}>\n", track_guesser));
         }
 
