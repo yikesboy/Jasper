@@ -19,17 +19,15 @@ pub async fn handle_message(
         return Ok(());
     }
 
-    let guild_id = match msg.guild_id {
-        Some(id) => id,
+    match msg.guild_id {
+        Some(_) => {}
         None => return Ok(()),
-    };
-
-    if let Some(game) = game_state.games.get(&guild_id) {
-        game.value()
-            .handle_message(ctx, msg)
-            .await
-            .map_err(|error| MessageEventError::GameHandlerError(Box::new(error)))?;
     }
+
+    game_state
+        .handle_message(ctx, msg)
+        .await
+        .map_err(|error| MessageEventError::GameHandlerError(Box::new(error)))?;
 
     Ok(())
 }

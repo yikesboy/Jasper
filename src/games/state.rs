@@ -31,7 +31,7 @@ pub enum GameStateError {
     GameAlreadyActiveInServer,
 }
 pub struct GameState {
-    pub games: DashMap<GuildId, GameType>,
+    games: DashMap<GuildId, GameType>,
 }
 
 impl GameState {
@@ -59,6 +59,18 @@ impl GameState {
         self.games.get(&guild_id).map(|game| match game.value() {
             GameType::Quiz(quiz) => Arc::clone(quiz),
         })
+    }
+
+    pub async fn handle_message(
+        &self,
+        ctx: &serenity::all::Context,
+        msg: &Message,
+    ) -> Result<(), AppError> {
+        if let Some(game) = self.games.get(&msg.guild_id.unwrap()) {
+            game.value().handle_message(ctx, msg).await?;
+        }
+
+        Ok(())
     }
 
     pub fn end_game(&self, guild_id: GuildId) {
