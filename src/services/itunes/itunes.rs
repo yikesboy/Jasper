@@ -1,6 +1,7 @@
 use crate::services::itunes::error::ITunesAPIError;
 use crate::services::itunes::models::{ITunesSearchResponse, TrackInfo};
 use reqwest::Client;
+use url::Url;
 
 #[derive(Clone)]
 pub struct ItunesAPI {
@@ -46,10 +47,21 @@ impl ItunesAPI {
             .await
             .map_err(ITunesAPIError::InvalidResponseBody)?;
 
-        Ok(data.results.first().map(|track| TrackInfo {
+        let Some(track) = data.results.first() else {
+            return Ok(None);
+        };
+
+        let preview_url = track
+            .preview_url
+            .as_deref()
+            .map(Url::parse)
+            .transpose()
+            .map_err(ITunesAPIError::InvalidPreviewUrl)?;
+
+        Ok(Some(TrackInfo {
             track_name: track.track_name.clone(),
             artist_name: track.artist_name.clone(),
-            preview_url: track.preview_url.clone(),
+            preview_url,
             is_streamable: track.is_streamable,
         }))
     }

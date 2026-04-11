@@ -1,4 +1,5 @@
 use thiserror::Error;
+use url::ParseError;
 
 #[derive(Error, Debug)]
 pub enum ITunesAPIError {
@@ -10,4 +11,7 @@ pub enum ITunesAPIError {
 
     #[error("Invalid response body: {0}")]
     InvalidResponseBody(#[source] reqwest::Error),
+
+    #[error("Invalid preview URL: {0}")]
+    InvalidPreviewUrl(#[source] ParseError),
 }
