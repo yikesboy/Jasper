@@ -1,6 +1,6 @@
 use crate::games::music_quiz::MusicQuizError;
-use crate::services::itunes::ITunesAPIError;
-use crate::services::spotify::SpotifyAPIError;
+use crate::services::itunes::ItunesClientError;
+use crate::services::spotify::SpotifyClientError;
 use serenity::Error as SerenityError;
 use songbird::error::JoinError;
 use thiserror::Error;
@@ -30,10 +30,10 @@ pub enum MusicQuizCommandError {
     MusicQuiz(#[from] MusicQuizError),
 
     #[error("Spotify API request failed: {0}")]
-    Spotify(#[source] SpotifyAPIError),
+    Spotify(#[source] SpotifyClientError),
 
     #[error("iTunes API request failed: {0}")]
-    ITunes(#[source] ITunesAPIError),
+    Itunes(#[source] ItunesClientError),
 
     #[error("Could not leave channel: {0}")]
     CouldNotLeaveChannel(#[source] JoinError),

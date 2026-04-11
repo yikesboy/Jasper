@@ -40,7 +40,7 @@ impl MusicQuizPreparationService {
                 .itunes
                 .search_track(&search_query)
                 .await
-                .map_err(MusicQuizCommandError::ITunes)?;
+                .map_err(MusicQuizCommandError::Itunes)?;
 
             let Some(track_info) = track_info else {
                 continue;

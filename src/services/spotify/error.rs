@@ -4,7 +4,7 @@ use thiserror::Error;
 use url::Url;
 
 #[derive(Error, Debug)]
-pub enum SpotifyAPIError {
+pub enum SpotifyClientError {
     #[error("Not a spotify link: {0}")]
     InvalidLink(Url),
 

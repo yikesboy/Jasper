@@ -2,7 +2,7 @@ use thiserror::Error;
 use url::ParseError;
 
 #[derive(Error, Debug)]
-pub enum ITunesAPIError {
+pub enum ItunesClientError {
     #[error("Request failed: {0}")]
     RequestFailed(#[source] reqwest::Error),
 
