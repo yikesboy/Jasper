@@ -1,7 +1,7 @@
+use crate::app::music_quiz_preparation::MusicQuizPreparationService;
 use crate::commands::MusicQuizCommandError;
-use crate::games::music_quiz::quiz::MusicQuiz;
+use crate::games::music_quiz::{quiz::MusicQuiz, QuizTrack};
 use crate::games::state::{GameState, GameStateError};
-use crate::services::itunes::TrackInfo;
 use crate::Context;
 use reqwest::Client;
 use serenity::all::{ChannelId, CreateEmbed, CreateMessage, GuildId, UserId};
@@ -42,7 +42,7 @@ pub async fn start_from_command(
 struct PreparedMusicQuiz {
     quiz: MusicQuiz,
     voice_channel_id: ChannelId,
-    tracks: Vec<TrackInfo>,
+    tracks: Vec<QuizTrack>,
 }
 
 struct QuizRuntime {
@@ -94,7 +94,7 @@ impl QuizRuntime {
         Ok(())
     }
 
-    fn spawn_run_task(self, quiz: Arc<Mutex<MusicQuiz>>, tracks: Vec<TrackInfo>) {
+    fn spawn_run_task(self, quiz: Arc<Mutex<MusicQuiz>>, tracks: Vec<QuizTrack>) {
         tokio::spawn(async move {
             let result = self.run(Arc::clone(&quiz), tracks).await;
 
@@ -110,7 +110,7 @@ impl QuizRuntime {
     async fn run(
         &self,
         quiz: Arc<Mutex<MusicQuiz>>,
-        tracks: Vec<TrackInfo>,
+        tracks: Vec<QuizTrack>,
     ) -> Result<(), MusicQuizCommandError> {
         for track in tracks {
             {
@@ -119,7 +119,7 @@ impl QuizRuntime {
             }
 
             self.send_round_start_message(&quiz).await?;
-            self.play_track(&track.preview_url).await?;
+            self.play_track(track.preview_url()).await?;
             wait_for_track_finished_or_timeout(&quiz).await;
             self.stop_audio().await?;
             self.send_round_completion_message(&quiz).await?;
@@ -170,7 +170,8 @@ impl QuizRuntime {
 
         let mut description = format!(
             "**Song:** {} by {}\n\n",
-            round.track().track_name, round.track().artist_name
+            round.track().name(),
+            round.track().artist()
         );
 
         if let Some(artist_guesser) = round.artist_guessed_by() {
@@ -254,7 +255,7 @@ impl QuizRuntime {
         Ok(())
     }
 
-    async fn play_track(&self, preview_url: &str) -> Result<(), MusicQuizCommandError> {
+    async fn play_track(&self, preview_url: &Url) -> Result<(), MusicQuizCommandError> {
         let songbird = songbird::get(&self.serenity_ctx)
             .await
             .ok_or(MusicQuizCommandError::SongbirdNotInitialized)?;
@@ -315,21 +316,17 @@ async fn prepare_quiz(
 
     let voice_channel_id = get_user_voice_channel(ctx, guild_id, ctx.author().id)?;
     let participants = get_voice_channel_participants(ctx, guild_id, voice_channel_id)?;
-    if participants.is_empty() {
-        return Err(MusicQuizCommandError::ToFewUsersInChannel);
+    if participants.len() < 2 {
+        return Err(MusicQuizCommandError::TooFewUsersInChannel {
+            actual: participants.len(),
+        });
     }
 
     let total_rounds = total_rounds.unwrap_or(TOTAL_ROUNDS_DEFAULT);
-    let quiz = MusicQuiz::new(
-        total_rounds,
-        participants,
-        Arc::clone(&ctx.data().itunes),
-        Arc::clone(&ctx.data().spotify),
-    );
-
-    let tracks = quiz
-        .fetch_random_tracks_from_playlist(spotify_playlist, total_rounds)
-        .await?;
+    let quiz = MusicQuiz::new(total_rounds, participants);
+    let tracks =
+        MusicQuizPreparationService::fetch_quiz_tracks(ctx.data(), spotify_playlist, total_rounds)
+            .await?;
 
     Ok(PreparedMusicQuiz {
         quiz,
