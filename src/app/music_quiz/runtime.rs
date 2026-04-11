@@ -297,7 +297,7 @@ pub fn get_user_voice_channel(
 
     voice_state
         .channel_id
-        .ok_or(MusicQuizCommandError::UserHasNoChannelID)
+        .ok_or(MusicQuizCommandError::UserHasNoChannelId)
 }
 
 pub fn get_voice_channel_participants(
