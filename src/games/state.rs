@@ -66,7 +66,11 @@ impl GameState {
         ctx: &serenity::all::Context,
         msg: &Message,
     ) -> Result<(), AppError> {
-        if let Some(game) = self.games.get(&msg.guild_id.unwrap()) {
+        let Some(guild_id) = msg.guild_id else {
+            return Ok(());
+        };
+
+        if let Some(game) = self.games.get(&guild_id) {
             game.value().handle_message(ctx, msg).await?;
         }
 
