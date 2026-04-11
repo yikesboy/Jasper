@@ -1,4 +1,6 @@
 use crate::games::music_quiz::MusicQuizError;
+use crate::services::itunes::ITunesAPIError;
+use crate::services::spotify::SpotifyAPIError;
 use serenity::Error as SerenityError;
 use songbird::error::JoinError;
 use thiserror::Error;
@@ -27,6 +29,12 @@ pub enum MusicQuizCommandError {
     #[error(transparent)]
     MusicQuiz(#[from] MusicQuizError),
 
+    #[error("Spotify API request failed: {0}")]
+    Spotify(#[source] SpotifyAPIError),
+
+    #[error("iTunes API request failed: {0}")]
+    ITunes(#[source] ITunesAPIError),
+
     #[error("Could not leave channel: {0}")]
     CouldNotLeaveChannel(#[source] JoinError),
 
@@ -48,8 +56,14 @@ pub enum MusicQuizCommandError {
     #[error("Game is already running on the server.")]
     GameAlreadyRunningInGuild,
 
-    #[error("Too few users in channel.")]
-    ToFewUsersInChannel,
+    #[error("Too few users in channel. Need at least 2 human users, found {actual}.")]
+    TooFewUsersInChannel { actual: usize },
+
+    #[error("Playlist contains not enough songs. Expected: {expected} Actual: {actual}")]
+    PlaylistContainsNotEnoughSongs { expected: u32, actual: u32 },
+
+    #[error("Playlist contains not enough previewable songs. Expected: {expected} Actual: {actual}")]
+    PlaylistContainsNotEnoughPreviewableSongs { expected: u32, actual: u32 },
 
     #[error("Failed to join voice channel: {0}")]
     FailedToJoinVoiceChannel(#[source] JoinError),
