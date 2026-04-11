@@ -19,11 +19,6 @@ pub async fn handle_message(
         return Ok(());
     }
 
-    match msg.guild_id {
-        Some(_) => {}
-        None => return Ok(()),
-    }
-
     game_state
         .handle_message(ctx, msg)
         .await
