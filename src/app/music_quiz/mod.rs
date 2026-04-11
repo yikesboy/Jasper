@@ -1,12 +1,15 @@
-use crate::app::music_quiz_preparation::MusicQuizPreparationService;
-use crate::app::music_quiz_runtime::{
-    MusicQuizRuntime, PreparedMusicQuiz, get_user_voice_channel, get_voice_channel_participants,
-};
+mod preparation;
+mod runtime;
+
 use crate::commands::MusicQuizCommandError;
 use crate::games::music_quiz::quiz::MusicQuiz;
 use crate::Context;
 use std::sync::Arc;
 use url::Url;
+use preparation::MusicQuizPreparationService;
+use runtime::{
+    MusicQuizRuntime, PreparedMusicQuiz, get_user_voice_channel, get_voice_channel_participants,
+};
 
 const TOTAL_ROUNDS_DEFAULT: u32 = 5;
 
