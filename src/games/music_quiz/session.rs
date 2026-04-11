@@ -1,16 +1,16 @@
-use crate::services::itunes::models::TrackInfo;
+use crate::games::music_quiz::QuizTrack;
 use serenity::all::UserId;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct Round {
-    track: TrackInfo,
+    track: QuizTrack,
     artist_guessed_by: Option<UserId>,
     track_guessed_by: Option<UserId>,
 }
 
 impl Round {
-    pub fn new(track: TrackInfo) -> Self {
+    pub fn new(track: QuizTrack) -> Self {
         Self {
             track,
             artist_guessed_by: None,
@@ -18,7 +18,7 @@ impl Round {
         }
     }
 
-    pub fn track(&self) -> &TrackInfo {
+    pub fn track(&self) -> &QuizTrack {
         &self.track
     }
 
@@ -63,7 +63,7 @@ impl MusicQuizSession {
         }
     }
 
-    pub fn start_round(&mut self, track: TrackInfo) {
+    pub fn start_round(&mut self, track: QuizTrack) {
         self.round_number += 1;
         self.current_round = Some(Round::new(track))
     }
