@@ -1,14 +1,9 @@
 use crate::games::music_quiz::error::MusicQuizError;
 use crate::games::music_quiz::session::MusicQuizSession;
-use crate::services::itunes::itunes::ItunesAPI;
-use crate::services::itunes::models::TrackInfo;
-use crate::services::spotify::SpotifyAPI;
-use rand::seq::SliceRandom;
+use crate::games::music_quiz::QuizTrack;
 use serenity::all::UserId;
-use std::sync::Arc;
 use strsim::normalized_levenshtein;
 use tokio::sync::Notify;
-use url::Url;
 
 enum GuessResult {
     ArtistOnly,
@@ -26,9 +21,7 @@ pub enum GuessOutcome {
 }
 pub struct MusicQuiz {
     session: MusicQuizSession,
-    round_complete_notify: Arc<Notify>,
-    itunes: Arc<ItunesAPI>,
-    spotify: Arc<SpotifyAPI>,
+    round_complete_notify: std::sync::Arc<Notify>,
 }
 
 impl MusicQuiz {
@@ -39,14 +32,10 @@ impl MusicQuiz {
     pub fn new(
         total_rounds: u32,
         participants: Vec<UserId>,
-        itunes: Arc<ItunesAPI>,
-        spotify: Arc<SpotifyAPI>,
     ) -> Self {
         Self {
             session: MusicQuizSession::new(total_rounds, participants),
-            round_complete_notify: Arc::new(Notify::new()),
-            itunes,
-            spotify,
+            round_complete_notify: std::sync::Arc::new(Notify::new()),
         }
     }
 
@@ -129,13 +118,13 @@ impl MusicQuiz {
         Ok(outcome)
     }
 
-    pub fn notify_round_complete(&self) -> Arc<Notify> {
+    pub fn notify_round_complete(&self) -> std::sync::Arc<Notify> {
         self.round_complete_notify.clone()
     }
 
-    fn evaluate_user_guess(guess: &str, current_track: &TrackInfo) -> GuessResult {
-        let normalized_track_name = Self::normalize_string(&current_track.track_name);
-        let normalized_track_artist = Self::normalize_string(&current_track.artist_name);
+    fn evaluate_user_guess(guess: &str, current_track: &QuizTrack) -> GuessResult {
+        let normalized_track_name = Self::normalize_string(current_track.name());
+        let normalized_track_artist = Self::normalize_string(current_track.artist());
         let normalized_guess = Self::normalize_string(guess);
 
         let both = format!("{}{}", normalized_track_name, normalized_track_artist);
@@ -167,60 +156,6 @@ impl MusicQuiz {
             .chars()
             .filter(|c| c.is_alphanumeric())
             .collect()
-    }
-
-    pub async fn fetch_random_tracks_from_playlist(
-        &self,
-        playlist_link: Url,
-        count: u32,
-    ) -> Result<Vec<TrackInfo>, MusicQuizError> {
-        let mut track_list = self
-            .spotify
-            .get_playlist_tracks(playlist_link)
-            .await
-            .map_err(MusicQuizError::FailedToFetchTracksFromPlaylist)?;
-
-        if track_list.is_empty() || track_list.len() < count as usize {
-            return Err(MusicQuizError::PlaylistContainsNotEnoughSongs {
-                expected: count,
-                actual: track_list.len() as u32,
-            });
-        }
-
-        track_list.shuffle(&mut rand::rng());
-
-        let mut result = Vec::with_capacity(count as usize);
-
-        for ft in track_list {
-            if result.len() >= count as usize {
-                break;
-            }
-
-            let artists = ft
-                .artists
-                .iter()
-                .map(|artist| artist.name.as_str())
-                .collect::<Vec<&str>>()
-                .join(", ");
-            let search_query = format! {"{} - {}", ft.name, artists};
-
-            match self.itunes.search_track(&search_query).await {
-                Ok(Some(track_info)) if !track_info.preview_url.is_empty() => {
-                    result.push(track_info)
-                }
-                Ok(None) | Ok(Some(_)) => continue,
-                Err(error) => return Err(MusicQuizError::FetchError(error)),
-            }
-        }
-
-        if result.len() < count as usize {
-            return Err(MusicQuizError::PlaylistContainsNotEnoughPreviewableSongs {
-                expected: count,
-                actual: result.len() as u32,
-            });
-        }
-
-        Ok(result)
     }
 
     pub fn is_round_complete(&self) -> bool {
