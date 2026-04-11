@@ -1,15 +1,15 @@
-use crate::services::itunes::error::ITunesAPIError;
-use crate::services::itunes::models::{ITunesSearchResponse, TrackInfo};
+use super::error::ItunesClientError;
+use super::models::{ItunesSearchResponse, TrackInfo};
 use reqwest::Client;
 use url::Url;
 
 #[derive(Clone)]
-pub struct ItunesAPI {
+pub struct ItunesClient {
     http: Client,
     base_url: String,
 }
 
-impl ItunesAPI {
+impl ItunesClient {
     const BASE_URL: &'static str = "https://itunes.apple.com";
     pub fn new(base_url: Option<&str>) -> Self {
         let client = Client::new();
@@ -21,7 +21,7 @@ impl ItunesAPI {
         }
     }
 
-    pub async fn search_track(&self, query: &str) -> Result<Option<TrackInfo>, ITunesAPIError> {
+    pub async fn search_track(&self, query: &str) -> Result<Option<TrackInfo>, ItunesClientError> {
         let url = format!("{}/search", self.base_url);
         let params = [
             ("term", query),
@@ -36,16 +36,16 @@ impl ItunesAPI {
             .query(&params)
             .send()
             .await
-            .map_err(|e| ITunesAPIError::RequestFailed(e))?;
+            .map_err(ItunesClientError::RequestFailed)?;
 
         if !response.status().is_success() {
-            return Err(ITunesAPIError::RequestUnsuccessful);
+            return Err(ItunesClientError::RequestUnsuccessful);
         }
 
-        let data: ITunesSearchResponse = response
+        let data: ItunesSearchResponse = response
             .json()
             .await
-            .map_err(ITunesAPIError::InvalidResponseBody)?;
+            .map_err(ItunesClientError::InvalidResponseBody)?;
 
         let Some(track) = data.results.first() else {
             return Ok(None);
@@ -56,7 +56,7 @@ impl ItunesAPI {
             .as_deref()
             .map(Url::parse)
             .transpose()
-            .map_err(ITunesAPIError::InvalidPreviewUrl)?;
+            .map_err(ItunesClientError::InvalidPreviewUrl)?;
 
         Ok(Some(TrackInfo {
             track_name: track.track_name.clone(),

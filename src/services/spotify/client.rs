@@ -1,4 +1,4 @@
-use super::error::SpotifyAPIError;
+use super::error::SpotifyClientError;
 use super::models::{FullTrack, PlaylistPage, TokenResponse};
 use reqwest::{header, Client};
 use std::sync::Arc;
@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 use url::Url;
 
 #[derive(Clone)]
-pub struct SpotifyAPI {
+pub struct SpotifyClient {
     http: Client,
     base_url: String,
     client_id: String,
@@ -15,14 +15,14 @@ pub struct SpotifyAPI {
     bearer_token: Arc<RwLock<Option<(String, Instant)>>>,
 }
 
-impl SpotifyAPI {
+impl SpotifyClient {
     const BASE_URL: &'static str = "https://api.spotify.com/v1";
     const TOKEN_URL: &'static str = "https://accounts.spotify.com/api/token";
     pub async fn new(
         client_id: &str,
         client_secret: &str,
         base_url: Option<&str>,
-    ) -> Result<Self, SpotifyAPIError> {
+    ) -> Result<Self, SpotifyClientError> {
         let client = Client::new();
         let base_url = base_url.unwrap_or(Self::BASE_URL).to_string();
 
@@ -38,7 +38,7 @@ impl SpotifyAPI {
     pub async fn get_playlist_tracks(
         &self,
         playlist_url: Url,
-    ) -> Result<Vec<FullTrack>, SpotifyAPIError> {
+    ) -> Result<Vec<FullTrack>, SpotifyClientError> {
         let playlist_id = Self::retrieve_playlist_id(playlist_url)?;
         let initial_page_url = format!("{}/playlists/{}/tracks", self.base_url, playlist_id);
         let mut next_page_url = Some(initial_page_url.clone());
@@ -63,16 +63,16 @@ impl SpotifyAPI {
             } else {
                 request.send().await
             }
-            .map_err(SpotifyAPIError::RequestFailed)?;
+            .map_err(SpotifyClientError::RequestFailed)?;
 
             if !response.status().is_success() {
-                return Err(SpotifyAPIError::FailedToRetrievePlaylistTracks);
+                return Err(SpotifyClientError::FailedToRetrievePlaylistTracks);
             }
 
             let page: PlaylistPage = response
                 .json()
                 .await
-                .map_err(SpotifyAPIError::InvalidPlaylistResponse)?;
+                .map_err(SpotifyClientError::InvalidPlaylistResponse)?;
 
             tracks.extend(page.items.into_iter().filter_map(|item| item.track));
             next_page_url = page.next;
@@ -81,7 +81,7 @@ impl SpotifyAPI {
         Ok(tracks)
     }
 
-    async fn get_bearer_token(&self) -> Result<String, SpotifyAPIError> {
+    async fn get_bearer_token(&self) -> Result<String, SpotifyClientError> {
         {
             let token_guard = self.bearer_token.read().await;
 
@@ -99,17 +99,17 @@ impl SpotifyAPI {
             .form(&[("grant_type", "client_credentials")])
             .send()
             .await
-            .map_err(SpotifyAPIError::AuthenticationRequestFailed)?;
+            .map_err(SpotifyClientError::AuthenticationRequestFailed)?;
 
         let status = response.status();
         if !status.is_success() {
-            return Err(SpotifyAPIError::AuthenticationRejected(status));
+            return Err(SpotifyClientError::AuthenticationRejected(status));
         }
 
         let token_response: TokenResponse = response
             .json()
             .await
-            .map_err(SpotifyAPIError::AuthenticationResponseInvalid)?;
+            .map_err(SpotifyClientError::AuthenticationResponseInvalid)?;
 
         let expires_at = Instant::now() + Duration::from_secs(token_response.expires_in as u64);
 
@@ -121,27 +121,27 @@ impl SpotifyAPI {
         Ok(token_response.access_token)
     }
 
-    fn retrieve_playlist_id(playlist_url: Url) -> Result<String, SpotifyAPIError> {
+    fn retrieve_playlist_id(playlist_url: Url) -> Result<String, SpotifyClientError> {
         if playlist_url.host_str() != Some("open.spotify.com") {
-            return Err(SpotifyAPIError::InvalidLink(playlist_url));
+            return Err(SpotifyClientError::InvalidLink(playlist_url));
         }
 
         let mut segments = match playlist_url.path_segments() {
             Some(segments) => segments,
-            None => return Err(SpotifyAPIError::MalformedUrl(playlist_url.to_string())),
+            None => return Err(SpotifyClientError::MalformedUrl(playlist_url.to_string())),
         };
 
         if segments.next() != Some("playlist") {
-            return Err(SpotifyAPIError::NotPlaylistLink(playlist_url));
+            return Err(SpotifyClientError::NotPlaylistLink(playlist_url));
         }
 
         let id = match segments.next() {
             Some(id) => id.to_string(),
-            None => return Err(SpotifyAPIError::PlaylistIdMissing),
+            None => return Err(SpotifyClientError::PlaylistIdMissing),
         };
 
         if let Some(segment) = segments.next() {
-            return Err(SpotifyAPIError::UnexpectedSegment(segment.to_string()));
+            return Err(SpotifyClientError::UnexpectedSegment(segment.to_string()));
         }
 
         Ok(id)

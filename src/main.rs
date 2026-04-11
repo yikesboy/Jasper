@@ -9,8 +9,8 @@ use crate::commands::MusicQuizCommandError;
 use crate::config::{Config, ConfigError};
 use crate::events::{MessageEventError, handle_message};
 use crate::games::state::GameState;
-use crate::services::itunes::ItunesAPI;
-use crate::services::spotify::{SpotifyAPI, SpotifyAPIError};
+use crate::services::itunes::ItunesClient;
+use crate::services::spotify::{SpotifyClient, SpotifyClientError};
 use dotenvy::dotenv;
 use poise::builtins::{register_globally, register_in_guild};
 use poise::{Framework, FrameworkOptions};
@@ -23,8 +23,8 @@ use thiserror::Error;
 #[derive(Clone)]
 pub struct Data {
     pub game_state: Arc<GameState>,
-    pub itunes: Arc<ItunesAPI>,
-    pub spotify: Arc<SpotifyAPI>,
+    pub itunes: Arc<ItunesClient>,
+    pub spotify: Arc<SpotifyClient>,
 }
 
 #[derive(Debug, Error)]
@@ -36,7 +36,7 @@ pub enum AppError {
     Serenity(#[from] serenity::Error),
 
     #[error(transparent)]
-    Spotify(#[from] SpotifyAPIError),
+    Spotify(#[from] SpotifyClientError),
 
     #[error(transparent)]
     MusicQuizCommand(#[from] MusicQuizCommandError),
@@ -83,7 +83,7 @@ fn create_framework(config: Config) -> Framework<Data, Error> {
             Box::pin(async move {
                 register_commands(context, &config, commands).await?;
 
-                let spotify = SpotifyAPI::new(
+                let spotify = SpotifyClient::new(
                     &config.spotify_client_id,
                     &config.spotify_client_secret,
                     None,
@@ -92,7 +92,7 @@ fn create_framework(config: Config) -> Framework<Data, Error> {
 
                 Ok(Data {
                     game_state: Arc::new(GameState::new()),
-                    itunes: Arc::new(ItunesAPI::new(None)),
+                    itunes: Arc::new(ItunesClient::new(None)),
                     spotify: Arc::new(spotify),
                 })
             })
