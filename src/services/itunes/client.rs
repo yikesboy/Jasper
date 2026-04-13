@@ -30,6 +30,10 @@ impl PreviewTrack {
     pub fn preview_url(&self) -> &Url {
         &self.preview_url
     }
+
+    pub fn into_parts(self) -> (String, String, Url) {
+        (self.title, self.artist, self.preview_url)
+    }
 }
 
 #[derive(Clone)]
@@ -79,7 +83,7 @@ impl ItunesClient {
             .await
             .map_err(ItunesClientError::InvalidResponseBody)?;
 
-        let Some(track) = data.results.first() else {
+        let Some(track) = data.results.into_iter().next() else {
             return Ok(None);
         };
 
@@ -95,8 +99,8 @@ impl ItunesClient {
         };
 
         Ok(Some(PreviewTrack::new(
-            track.track_name.clone(),
-            track.artist_name.clone(),
+            track.track_name,
+            track.artist_name,
             preview_url,
         )))
     }
