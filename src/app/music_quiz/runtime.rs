@@ -74,7 +74,7 @@ impl MusicQuizRuntime {
 
     fn spawn_run_task(self, quiz: MusicQuizHandle, tracks: Vec<QuizTrack>) {
         tokio::spawn(async move {
-            let result = self.run(quiz.clone(), tracks).await;
+            let result = self.run(quiz, tracks).await;
 
             let _ = self.leave_voice_channel().await;
             self.game_state.end_game(self.guild_id);
@@ -91,10 +91,11 @@ impl MusicQuizRuntime {
         tracks: Vec<QuizTrack>,
     ) -> Result<(), MusicQuizCommandError> {
         for track in tracks {
-            quiz.start_round(track.clone()).await;
+            let preview_url = track.preview_url().clone();
+            quiz.start_round(track).await;
 
             self.send_round_start_message(&quiz).await?;
-            self.play_track(track.preview_url()).await?;
+            self.play_track(&preview_url).await?;
             wait_for_track_finished_or_timeout(&quiz).await;
             self.stop_audio().await?;
             self.send_round_completion_message(&quiz).await?;
