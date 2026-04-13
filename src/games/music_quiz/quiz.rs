@@ -84,7 +84,7 @@ impl MusicQuiz {
                     let points = if round.artist_guessed_by() == Some(user_id) {
                         round.set_track_guessed_by(user_id);
                         self.session.add_score(user_id, 2);
-                        3
+                        2
                     } else {
                         round.set_track_guessed_by(user_id);
                         self.session.add_score(user_id, 1);
@@ -99,7 +99,7 @@ impl MusicQuiz {
                     let points = if round.track_guessed_by() == Some(user_id) {
                         round.set_artist_guessed_by(user_id);
                         self.session.add_score(user_id, 2);
-                        3
+                        2
                     } else {
                         round.set_artist_guessed_by(user_id);
                         self.session.add_score(user_id, 1);
@@ -164,5 +164,84 @@ impl MusicQuiz {
         } else {
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GuessOutcome, MusicQuiz};
+    use crate::games::music_quiz::QuizTrack;
+    use serenity::all::UserId;
+    use std::time::Duration;
+    use tokio::task::yield_now;
+    use tokio::time::timeout;
+    use url::Url;
+
+    fn user(id: u64) -> UserId {
+        UserId::new(id)
+    }
+
+    fn track(name: &str, artist: &str) -> QuizTrack {
+        QuizTrack::new(
+            name.to_string(),
+            artist.to_string(),
+            Url::parse("https://example.com/preview.mp3").unwrap(),
+        )
+    }
+
+    fn quiz_with_round(name: &str, artist: &str) -> MusicQuiz {
+        let participants = vec![user(1), user(2), user(3)];
+        let mut quiz = MusicQuiz::new(5, participants);
+        quiz.session_mut().start_round(track(name, artist));
+        quiz
+    }
+
+    #[test]
+    fn both_guess_matches_despite_case_and_punctuation() {
+        let mut quiz = quiz_with_round("Mr. Brightside", "The Killers");
+
+        let outcome = quiz.make_guess(user(1), "the killers mr brightside").unwrap();
+
+        assert!(matches!(outcome, GuessOutcome::Both { points: 3 }));
+        assert!(quiz.is_round_complete());
+        assert_eq!(quiz.session().get_leaderboard(), vec![(user(1), 3), (user(2), 0), (user(3), 0)]);
+    }
+
+    #[test]
+    fn same_user_completing_round_gets_two_incremental_points() {
+        let mut quiz = quiz_with_round("Numb", "Linkin Park");
+
+        let first = quiz.make_guess(user(1), "Linkin Park").unwrap();
+        let second = quiz.make_guess(user(1), "Numb").unwrap();
+
+        assert!(matches!(first, GuessOutcome::Artist { points: 1 }));
+        assert!(matches!(second, GuessOutcome::Track { points: 2 }));
+        assert_eq!(quiz.session().get_leaderboard(), vec![(user(1), 3), (user(2), 0), (user(3), 0)]);
+    }
+
+    #[test]
+    fn no_round_in_progress_returns_error() {
+        let mut quiz = MusicQuiz::new(5, vec![user(1)]);
+
+        let result = quiz.make_guess(user(1), "anything");
+
+        assert!(matches!(result, Err(crate::games::music_quiz::MusicQuizError::NoRoundInProgress)));
+    }
+
+    #[tokio::test]
+    async fn round_completion_notifies_waiters() {
+        let mut quiz = quiz_with_round("Africa", "Toto");
+        let notify = quiz.notify_round_complete();
+
+        let waiter = tokio::spawn(async move {
+            timeout(Duration::from_millis(100), notify.notified()).await.is_ok()
+        });
+
+        yield_now().await;
+
+        let outcome = quiz.make_guess(user(1), "Toto Africa").unwrap();
+
+        assert!(matches!(outcome, GuessOutcome::Both { points: 3 }));
+        assert!(waiter.await.unwrap());
     }
 }
