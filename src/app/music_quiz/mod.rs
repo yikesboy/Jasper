@@ -54,11 +54,7 @@ async fn prepare_quiz(
 
     let voice_channel_id = get_user_voice_channel(ctx, guild_id, ctx.author().id)?;
     let participants = get_voice_channel_participants(ctx, guild_id, voice_channel_id)?;
-    if participants.len() < 2 {
-        return Err(MusicQuizCommandError::TooFewUsersInChannel {
-            actual: participants.len(),
-        });
-    }
+    validate_participant_count(participants.len())?;
 
     let total_rounds = total_rounds.unwrap_or(TOTAL_ROUNDS_DEFAULT);
     let quiz = MusicQuiz::new(total_rounds, participants);
@@ -67,4 +63,40 @@ async fn prepare_quiz(
             .await?;
 
     Ok(PreparedMusicQuiz::new(quiz, voice_channel_id, tracks))
+}
+
+fn validate_participant_count(participant_count: usize) -> Result<(), MusicQuizCommandError> {
+    if participant_count < 1 {
+        return Err(MusicQuizCommandError::TooFewUsersInChannel {
+            actual: participant_count,
+        });
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_participant_count;
+    use crate::commands::MusicQuizCommandError;
+
+    #[test]
+    fn one_human_user_is_enough_to_start_quiz() {
+        assert!(validate_participant_count(1).is_ok());
+    }
+
+    #[test]
+    fn multiple_human_users_are_still_allowed() {
+        assert!(validate_participant_count(3).is_ok());
+    }
+
+    #[test]
+    fn zero_human_users_is_rejected() {
+        let error = validate_participant_count(0).unwrap_err();
+
+        assert!(matches!(
+            error,
+            MusicQuizCommandError::TooFewUsersInChannel { actual: 0 }
+        ));
+    }
 }

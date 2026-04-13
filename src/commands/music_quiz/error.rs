@@ -50,7 +50,7 @@ pub enum MusicQuizCommandError {
     #[error("Game is already running on the server.")]
     GameAlreadyRunningInGuild,
 
-    #[error("Too few users in channel. Need at least 2 human users, found {actual}.")]
+    #[error("Too few users in channel. Need at least 1 human user, found {actual}.")]
     TooFewUsersInChannel { actual: usize },
 
     #[error("Playlist contains not enough songs. Expected: {expected} Actual: {actual}")]
