@@ -4,6 +4,7 @@ use reqwest::{header, Client};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+use tracing::debug;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -61,6 +62,7 @@ impl SpotifyClient {
         playlist_url: Url,
     ) -> Result<Vec<PlaylistTrack>, SpotifyClientError> {
         let playlist_id = Self::retrieve_playlist_id(playlist_url)?;
+        debug!(playlist_id = %playlist_id, "Fetching Spotify playlist tracks");
         let initial_page_url = format!("{}/playlists/{}/tracks", self.base_url, playlist_id);
         let mut next_page_url = Some(initial_page_url.clone());
         let bearer_token = self.get_bearer_token().await?;
@@ -104,6 +106,11 @@ impl SpotifyClient {
             next_page_url = page.next;
         }
 
+        debug!(
+            playlist_id = %playlist_id,
+            track_count = tracks.len(),
+            "Fetched Spotify playlist tracks"
+        );
         Ok(tracks)
     }
 
@@ -118,6 +125,7 @@ impl SpotifyClient {
             }
         }
 
+        debug!("Refreshing Spotify bearer token");
         let response = self
             .http
             .post(Self::TOKEN_URL)
