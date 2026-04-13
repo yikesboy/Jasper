@@ -1,6 +1,6 @@
 mod client;
 mod error;
-pub mod models;
+mod models;
 
 pub use client::SpotifyClient;
 pub use error::SpotifyClientError;

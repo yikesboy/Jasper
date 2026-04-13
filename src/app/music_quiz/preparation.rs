@@ -1,6 +1,5 @@
 use crate::commands::MusicQuizCommandError;
 use crate::games::music_quiz::QuizTrack;
-use crate::services::spotify::models::FullTrack;
 use crate::Data;
 use rand::seq::SliceRandom;
 use url::Url;
@@ -35,25 +34,20 @@ impl MusicQuizPreparationService {
                 break;
             }
 
-            let search_query = Self::build_search_query(&track);
-            let track_info = data
+            let preview_track = data
                 .itunes
-                .search_track(&search_query)
+                .search_preview_track(&track.search_query())
                 .await
                 .map_err(MusicQuizCommandError::Itunes)?;
 
-            let Some(track_info) = track_info else {
-                continue;
-            };
-
-            let Some(preview_url) = track_info.preview_url else {
+            let Some(preview_track) = preview_track else {
                 continue;
             };
 
             result.push(QuizTrack::new(
-                track_info.track_name,
-                track_info.artist_name,
-                preview_url,
+                preview_track.title().to_string(),
+                preview_track.artist().to_string(),
+                preview_track.preview_url().clone(),
             ));
         }
 
@@ -65,16 +59,5 @@ impl MusicQuizPreparationService {
         }
 
         Ok(result)
-    }
-
-    fn build_search_query(track: &FullTrack) -> String {
-        let artists = track
-            .artists
-            .iter()
-            .map(|artist| artist.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        format!("{} - {}", track.name, artists)
     }
 }

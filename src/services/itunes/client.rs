@@ -1,7 +1,36 @@
 use super::error::ItunesClientError;
-use super::models::{ItunesSearchResponse, TrackInfo};
+use super::models::ItunesSearchResponse;
 use reqwest::Client;
 use url::Url;
+
+#[derive(Debug, Clone)]
+pub struct PreviewTrack {
+    title: String,
+    artist: String,
+    preview_url: Url,
+}
+
+impl PreviewTrack {
+    pub fn new(title: String, artist: String, preview_url: Url) -> Self {
+        Self {
+            title,
+            artist,
+            preview_url,
+        }
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn artist(&self) -> &str {
+        &self.artist
+    }
+
+    pub fn preview_url(&self) -> &Url {
+        &self.preview_url
+    }
+}
 
 #[derive(Clone)]
 pub struct ItunesClient {
@@ -21,7 +50,10 @@ impl ItunesClient {
         }
     }
 
-    pub async fn search_track(&self, query: &str) -> Result<Option<TrackInfo>, ItunesClientError> {
+    pub async fn search_preview_track(
+        &self,
+        query: &str,
+    ) -> Result<Option<PreviewTrack>, ItunesClientError> {
         let url = format!("{}/search", self.base_url);
         let params = [
             ("term", query),
@@ -58,11 +90,14 @@ impl ItunesClient {
             .transpose()
             .map_err(ItunesClientError::InvalidPreviewUrl)?;
 
-        Ok(Some(TrackInfo {
-            track_name: track.track_name.clone(),
-            artist_name: track.artist_name.clone(),
+        let Some(preview_url) = preview_url else {
+            return Ok(None);
+        };
+
+        Ok(Some(PreviewTrack::new(
+            track.track_name.clone(),
+            track.artist_name.clone(),
             preview_url,
-            is_streamable: track.is_streamable,
-        }))
+        )))
     }
 }

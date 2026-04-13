@@ -6,6 +6,27 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use url::Url;
 
+#[derive(Debug, Clone)]
+pub struct PlaylistTrack {
+    title: String,
+    artists: Vec<String>,
+}
+
+impl PlaylistTrack {
+    pub fn search_query(&self) -> String {
+        format!("{} - {}", self.title, self.artists.join(", "))
+    }
+}
+
+impl From<FullTrack> for PlaylistTrack {
+    fn from(track: FullTrack) -> Self {
+        Self {
+            title: track.name,
+            artists: track.artists.into_iter().map(|artist| artist.name).collect(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SpotifyClient {
     http: Client,
@@ -38,7 +59,7 @@ impl SpotifyClient {
     pub async fn get_playlist_tracks(
         &self,
         playlist_url: Url,
-    ) -> Result<Vec<FullTrack>, SpotifyClientError> {
+    ) -> Result<Vec<PlaylistTrack>, SpotifyClientError> {
         let playlist_id = Self::retrieve_playlist_id(playlist_url)?;
         let initial_page_url = format!("{}/playlists/{}/tracks", self.base_url, playlist_id);
         let mut next_page_url = Some(initial_page_url.clone());
@@ -74,7 +95,12 @@ impl SpotifyClient {
                 .await
                 .map_err(SpotifyClientError::InvalidPlaylistResponse)?;
 
-            tracks.extend(page.items.into_iter().filter_map(|item| item.track));
+            tracks.extend(
+                page.items
+                    .into_iter()
+                    .filter_map(|item| item.track)
+                    .map(PlaylistTrack::from),
+            );
             next_page_url = page.next;
         }
 
