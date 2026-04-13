@@ -36,7 +36,7 @@ impl MusicQuizPreparationService {
 
             let preview_track = data
                 .itunes
-                .search_preview_track(&track.search_query())
+                .search_preview_track(&track.into_search_query())
                 .await
                 .map_err(MusicQuizCommandError::Itunes)?;
 
@@ -44,11 +44,8 @@ impl MusicQuizPreparationService {
                 continue;
             };
 
-            result.push(QuizTrack::new(
-                preview_track.title().to_string(),
-                preview_track.artist().to_string(),
-                preview_track.preview_url().clone(),
-            ));
+            let (title, artist, preview_url) = preview_track.into_parts();
+            result.push(QuizTrack::new(title, artist, preview_url));
         }
 
         if result.len() < count as usize {

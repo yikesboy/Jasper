@@ -13,7 +13,7 @@ pub struct PlaylistTrack {
 }
 
 impl PlaylistTrack {
-    pub fn search_query(&self) -> String {
+    pub fn into_search_query(self) -> String {
         format!("{} - {}", self.title, self.artists.join(", "))
     }
 }
