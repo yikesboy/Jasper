@@ -19,6 +19,8 @@ use serenity::all::{FullEvent, GatewayIntents, GuildId};
 use songbird::SerenityInit;
 use std::sync::Arc;
 use thiserror::Error;
+use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Clone)]
 pub struct Data {
@@ -52,7 +54,22 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 async fn main() -> Result<(), Error> {
     dotenv().ok();
 
+    init_tracing();
+
+    if let Err(error) = run().await {
+        error!(error = %error, ?error, "Application terminated with an error");
+        return Err(error);
+    }
+
+    Ok(())
+}
+
+async fn run() -> Result<(), Error> {
     let config = Config::from_env()?;
+    info!(
+        environment = if config.is_dev() { "development" } else { "production" },
+        "Loaded configuration"
+    );
 
     let framework = create_framework(config.clone());
     let intents = GatewayIntents::non_privileged()
@@ -64,8 +81,20 @@ async fn main() -> Result<(), Error> {
         .register_songbird()
         .await?;
 
+    info!("Starting Discord client");
     client.start().await?;
     Ok(())
+}
+
+fn init_tracing() {
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_target(false)
+        .compact()
+        .init();
 }
 
 fn create_framework(config: Config) -> Framework<Data, Error> {
@@ -77,10 +106,15 @@ fn create_framework(config: Config) -> Framework<Data, Error> {
             },
             ..Default::default()
         })
-        .setup(move |context, _ready, framework| {
+        .setup(move |context, ready, framework| {
             let config = config.clone();
             let commands = &framework.options().commands;
             Box::pin(async move {
+                info!(
+                    user_id = ready.user.id.get(),
+                    username = %ready.user.name,
+                    "Connected to Discord and beginning framework setup"
+                );
                 register_commands(context, &config, commands).await?;
 
                 let spotify = SpotifyClient::new(
@@ -90,6 +124,7 @@ fn create_framework(config: Config) -> Framework<Data, Error> {
                 )
                 .await?;
 
+                info!("Initialized shared application state");
                 Ok(Data {
                     game_state: Arc::new(GameState::new()),
                     itunes: Arc::new(ItunesClient::new(None)),
@@ -110,11 +145,14 @@ async fn register_commands(
             .discord_testing_guild_id
             .ok_or_else(|| ConfigError::MissingEnvironmentVariable("DISCORD_TESTING_GUILD_ID".to_string()))?;
 
+        info!(guild_id, "Registering development guild commands");
         register_in_guild(context, commands, GuildId::new(guild_id)).await?;
     } else {
+        info!("Registering global commands");
         register_globally(context, commands).await?;
     }
 
+    info!("Command registration complete");
     Ok(())
 }
 
@@ -124,7 +162,18 @@ async fn handle_discord_event(
     data: &Data,
 ) -> Result<(), Error> {
     if let FullEvent::Message { new_message } = event {
-        handle_message(ctx, new_message, Arc::clone(&data.game_state)).await?;
+        handle_message(ctx, new_message, Arc::clone(&data.game_state))
+            .await
+            .map_err(|error| {
+                error!(
+                    author_id = new_message.author.id.get(),
+                    guild_id = new_message.guild_id.map(|id| id.get()),
+                    message_id = new_message.id.get(),
+                    error = %error,
+                    "Discord message event handling failed"
+                );
+                Error::from(error)
+            })?;
     }
 
     Ok(())

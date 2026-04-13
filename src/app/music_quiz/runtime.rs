@@ -8,6 +8,7 @@ use serenity::all::{ChannelId, GuildId, UserId};
 use serenity::client::Context as SerenityContext;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::{debug, error, info, warn};
 
 pub(crate) struct PreparedMusicQuiz {
     quiz: MusicQuiz,
@@ -48,6 +49,7 @@ impl MusicQuizRuntime {
     }
 
     pub async fn start(self, prepared: PreparedMusicQuiz) -> Result<(), MusicQuizCommandError> {
+        let round_count = prepared.tracks.len();
         let quiz = MusicQuizHandle::new(prepared.quiz);
 
         self.game_state
@@ -63,6 +65,12 @@ impl MusicQuizRuntime {
             return Err(error);
         }
 
+        info!(
+            guild_id = self.guild_id.get(),
+            voice_channel_id = prepared.voice_channel_id.get(),
+            rounds = round_count,
+            "Music quiz runtime started"
+        );
         self.spawn_run_task(quiz, prepared.tracks);
         Ok(())
     }
@@ -71,11 +79,34 @@ impl MusicQuizRuntime {
         tokio::spawn(async move {
             let result = self.run(quiz, tracks).await;
 
-            let _ = self.voice.leave().await;
+            if let Err(error) = self.voice.leave().await {
+                warn!(
+                    guild_id = self.guild_id.get(),
+                    error = %error,
+                    "Failed to leave voice channel during music quiz cleanup"
+                );
+            }
             self.game_state.end_game(self.guild_id);
 
-            if let Err(error) = result {
-                let _ = self.notifier.send_failure(&error).await;
+            match result {
+                Ok(()) => {
+                    info!(guild_id = self.guild_id.get(), "Music quiz finished successfully");
+                }
+                Err(error) => {
+                    error!(
+                        guild_id = self.guild_id.get(),
+                        error = %error,
+                        "Music quiz runtime failed"
+                    );
+
+                    if let Err(notification_error) = self.notifier.send_failure(&error).await {
+                        error!(
+                            guild_id = self.guild_id.get(),
+                            error = %notification_error,
+                            "Failed to send music quiz failure notification"
+                        );
+                    }
+                }
             }
         });
     }
@@ -88,16 +119,44 @@ impl MusicQuizRuntime {
         for track in tracks {
             let preview_url = track.preview_url().clone();
             quiz.start_round(track).await;
+            let progress = quiz.round_progress().await;
+
+            debug!(
+                guild_id = self.guild_id.get(),
+                round = progress.round_number,
+                total_rounds = progress.total_rounds,
+                "Starting music quiz round"
+            );
 
             self.notifier.send_round_start(&quiz).await?;
             self.voice.play_preview(&preview_url).await?;
-            wait_for_track_finished_or_timeout(&quiz).await;
+            let round_end = wait_for_track_finished_or_timeout(&quiz).await;
             self.voice.stop().await?;
             self.notifier.send_round_completion(&quiz).await?;
+            debug!(
+                guild_id = self.guild_id.get(),
+                round = progress.round_number,
+                reason = round_end.as_str(),
+                "Music quiz round finished"
+            );
             delay_between_rounds(&quiz).await;
         }
 
         self.notifier.send_final_results(&quiz).await
+    }
+}
+
+enum RoundEndReason {
+    GuessedEarly,
+    TimedOut,
+}
+
+impl RoundEndReason {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::GuessedEarly => "guessed_early",
+            Self::TimedOut => "timed_out",
+        }
     }
 }
 
@@ -144,12 +203,12 @@ pub fn get_voice_channel_participants(
         .collect())
 }
 
-async fn wait_for_track_finished_or_timeout(quiz: &MusicQuizHandle) {
+async fn wait_for_track_finished_or_timeout(quiz: &MusicQuizHandle) -> RoundEndReason {
     let notify = quiz.notify_round_complete().await;
 
     tokio::select! {
-        _ = notify.notified() => {},
-        _ = tokio::time::sleep(Duration::from_secs(25)) => {},
+        _ = notify.notified() => RoundEndReason::GuessedEarly,
+        _ = tokio::time::sleep(Duration::from_secs(25)) => RoundEndReason::TimedOut,
     }
 }
 

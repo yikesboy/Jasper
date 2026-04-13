@@ -1,6 +1,7 @@
 use super::error::ItunesClientError;
 use super::models::ItunesSearchResponse;
 use reqwest::Client;
+use tracing::debug;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -58,6 +59,7 @@ impl ItunesClient {
         &self,
         query: &str,
     ) -> Result<Option<PreviewTrack>, ItunesClientError> {
+        debug!(query, "Searching iTunes preview track");
         let url = format!("{}/search", self.base_url);
         let params = [
             ("term", query),
@@ -84,6 +86,7 @@ impl ItunesClient {
             .map_err(ItunesClientError::InvalidResponseBody)?;
 
         let Some(track) = data.results.into_iter().next() else {
+            debug!(query, "No iTunes track result found");
             return Ok(None);
         };
 
@@ -95,9 +98,11 @@ impl ItunesClient {
             .map_err(ItunesClientError::InvalidPreviewUrl)?;
 
         let Some(preview_url) = preview_url else {
+            debug!(query, "iTunes track has no preview URL");
             return Ok(None);
         };
 
+        debug!(query, "Resolved iTunes preview track");
         Ok(Some(PreviewTrack::new(
             track.track_name,
             track.artist_name,
