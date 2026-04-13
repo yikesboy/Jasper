@@ -87,10 +87,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger redeploy
+      - name: Trigger Dokploy deploy webhook
         run: |
           curl --fail --show-error --silent \
-            -X POST "${{ secrets.DOKPLOY_URL }}/api/application.redeploy" \
-            -H "Authorization: ${{ secrets.DOKPLOY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{"applicationId":"${{ secrets.DOKPLOY_APPLICATION_ID }}"}'
+            -X POST "${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}"
