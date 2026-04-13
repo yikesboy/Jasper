@@ -1,14 +1,13 @@
+use super::notifier::MusicQuizNotifier;
+use super::voice::MusicQuizVoice;
 use crate::commands::MusicQuizCommandError;
 use crate::games::music_quiz::{MusicQuizHandle, QuizTrack, quiz::MusicQuiz};
 use crate::games::state::{GameState, GameStateError};
 use crate::Context;
-use reqwest::Client;
-use serenity::all::{ChannelId, CreateEmbed, CreateMessage, GuildId, UserId};
+use serenity::all::{ChannelId, GuildId, UserId};
 use serenity::client::Context as SerenityContext;
-use songbird::input::HttpRequest;
 use std::sync::Arc;
 use std::time::Duration;
-use url::Url;
 
 pub(crate) struct PreparedMusicQuiz {
     quiz: MusicQuiz,
@@ -27,10 +26,10 @@ impl PreparedMusicQuiz {
 }
 
 pub struct MusicQuizRuntime {
-    serenity_ctx: SerenityContext,
-    response_channel_id: ChannelId,
-    guild_id: GuildId,
+    notifier: MusicQuizNotifier,
+    voice: MusicQuizVoice,
     game_state: Arc<GameState>,
+    guild_id: GuildId,
 }
 
 impl MusicQuizRuntime {
@@ -41,8 +40,8 @@ impl MusicQuizRuntime {
         game_state: Arc<GameState>,
     ) -> Self {
         Self {
-            serenity_ctx,
-            response_channel_id,
+            notifier: MusicQuizNotifier::new(serenity_ctx.clone(), response_channel_id),
+            voice: MusicQuizVoice::new(serenity_ctx, guild_id),
             guild_id,
             game_state,
         }
@@ -59,13 +58,9 @@ impl MusicQuizRuntime {
                 }
             })?;
 
-        let songbird = songbird::get(&self.serenity_ctx)
-            .await
-            .ok_or(MusicQuizCommandError::SongbirdNotInitialized)?;
-
-        if let Err(error) = songbird.join(self.guild_id, prepared.voice_channel_id).await {
+        if let Err(error) = self.voice.join(prepared.voice_channel_id).await {
             self.game_state.end_game(self.guild_id);
-            return Err(MusicQuizCommandError::FailedToJoinVoiceChannel(error));
+            return Err(error);
         }
 
         self.spawn_run_task(quiz, prepared.tracks);
@@ -76,11 +71,11 @@ impl MusicQuizRuntime {
         tokio::spawn(async move {
             let result = self.run(quiz, tracks).await;
 
-            let _ = self.leave_voice_channel().await;
+            let _ = self.voice.leave().await;
             self.game_state.end_game(self.guild_id);
 
             if let Err(error) = result {
-                let _ = self.send_failure_message(&error).await;
+                let _ = self.notifier.send_failure(&error).await;
             }
         });
     }
@@ -94,178 +89,15 @@ impl MusicQuizRuntime {
             let preview_url = track.preview_url().clone();
             quiz.start_round(track).await;
 
-            self.send_round_start_message(&quiz).await?;
-            self.play_track(&preview_url).await?;
+            self.notifier.send_round_start(&quiz).await?;
+            self.voice.play_preview(&preview_url).await?;
             wait_for_track_finished_or_timeout(&quiz).await;
-            self.stop_audio().await?;
-            self.send_round_completion_message(&quiz).await?;
+            self.voice.stop().await?;
+            self.notifier.send_round_completion(&quiz).await?;
             delay_between_rounds(&quiz).await;
         }
 
-        self.send_final_results(&quiz).await
-    }
-
-    async fn send_round_start_message(
-        &self,
-        quiz: &MusicQuizHandle,
-    ) -> Result<(), MusicQuizCommandError> {
-        let progress = quiz.round_progress().await;
-
-        self.response_channel_id
-            .send_message(
-                &self.serenity_ctx.http,
-                CreateMessage::new().embed(
-                    CreateEmbed::new()
-                        .title(format!(
-                            "🎵 Round {}/{}",
-                            progress.round_number, progress.total_rounds
-                        ))
-                        .description("Listen to the song and guess the artist and/or track name!")
-                        .color(0x3498db),
-                ),
-            )
-            .await
-            .map_err(MusicQuizCommandError::SendingMessageFailed)?;
-
-        Ok(())
-    }
-
-    async fn send_round_completion_message(
-        &self,
-        quiz: &MusicQuizHandle,
-    ) -> Result<(), MusicQuizCommandError> {
-        let round = match quiz.round_completion().await {
-            Some(round) => round,
-            None => return Ok(()),
-        };
-
-        let mut description = format!(
-            "**Song:** {} by {}\n\n",
-            round.track_name, round.artist_name
-        );
-
-        if let Some(artist_guesser) = round.artist_guessed_by {
-            description.push_str(&format!("🎤 Artist guessed by <@{}>\n", artist_guesser));
-        }
-
-        if let Some(track_guesser) = round.track_guessed_by {
-            description.push_str(&format!("🎵 Track guessed by <@{}>\n", track_guesser));
-        }
-
-        self.response_channel_id
-            .send_message(
-                &self.serenity_ctx.http,
-                CreateMessage::new().embed(
-                    CreateEmbed::new()
-                        .title("Round Complete!")
-                        .description(description)
-                        .color(0x2ecc71),
-                ),
-            )
-            .await
-            .map_err(MusicQuizCommandError::SendingMessageFailed)?;
-
-        Ok(())
-    }
-
-    async fn send_final_results(
-        &self,
-        quiz: &MusicQuizHandle,
-    ) -> Result<(), MusicQuizCommandError> {
-        let leaderboard = quiz.leaderboard().await;
-
-        let mut description = String::from("**Final Scores:**\n\n");
-
-        for (index, (user_id, score)) in leaderboard.iter().enumerate() {
-            let medal = match index {
-                0 => "🥇",
-                1 => "🥈",
-                2 => "🥉",
-                _ => "  ",
-            };
-            description.push_str(&format!("{} <@{}> - {} points\n", medal, user_id, score));
-        }
-
-        self.response_channel_id
-            .send_message(
-                &self.serenity_ctx.http,
-                CreateMessage::new().embed(
-                    CreateEmbed::new()
-                        .title("🎉 Music Quiz Complete!")
-                        .description(description)
-                        .color(0xf39c12),
-                ),
-            )
-            .await
-            .map_err(MusicQuizCommandError::SendingMessageFailed)?;
-
-        Ok(())
-    }
-
-    async fn send_failure_message(
-        &self,
-        error: &MusicQuizCommandError,
-    ) -> Result<(), MusicQuizCommandError> {
-        self.response_channel_id
-            .send_message(
-                &self.serenity_ctx.http,
-                CreateMessage::new().embed(
-                    CreateEmbed::new()
-                        .title("❌ Music Quiz Failed")
-                        .description(format!("An error occurred: {}", error))
-                        .color(0xe74c3c),
-                ),
-            )
-            .await
-            .map_err(MusicQuizCommandError::SendingMessageFailed)?;
-
-        Ok(())
-    }
-
-    async fn play_track(&self, preview_url: &Url) -> Result<(), MusicQuizCommandError> {
-        let songbird = songbird::get(&self.serenity_ctx)
-            .await
-            .ok_or(MusicQuizCommandError::SongbirdNotInitialized)?;
-
-        let handler_lock = songbird
-            .get(self.guild_id)
-            .ok_or(MusicQuizCommandError::SongbirdCallDoesNotExist)?;
-
-        let mut handler = handler_lock.lock().await;
-        let client = Client::new();
-        let source = HttpRequest::new(client, preview_url.to_string());
-
-        handler.play_only_input(source.into());
-
-        Ok(())
-    }
-
-    async fn stop_audio(&self) -> Result<(), MusicQuizCommandError> {
-        let songbird = songbird::get(&self.serenity_ctx)
-            .await
-            .ok_or(MusicQuizCommandError::SongbirdNotInitialized)?;
-
-        let handler_lock = songbird
-            .get(self.guild_id)
-            .ok_or(MusicQuizCommandError::SongbirdCallDoesNotExist)?;
-
-        let mut handler = handler_lock.lock().await;
-        handler.stop();
-
-        Ok(())
-    }
-
-    async fn leave_voice_channel(&self) -> Result<(), MusicQuizCommandError> {
-        let songbird = songbird::get(&self.serenity_ctx)
-            .await
-            .ok_or(MusicQuizCommandError::SongbirdNotInitialized)?;
-
-        songbird
-            .leave(self.guild_id)
-            .await
-            .map_err(MusicQuizCommandError::CouldNotLeaveChannel)?;
-
-        Ok(())
+        self.notifier.send_final_results(&quiz).await
     }
 }
 

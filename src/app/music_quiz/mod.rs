@@ -1,5 +1,7 @@
 mod preparation;
+mod notifier;
 mod runtime;
+mod voice;
 
 use crate::commands::MusicQuizCommandError;
 use crate::games::music_quiz::quiz::MusicQuiz;
