@@ -2,6 +2,7 @@ use crate::commands::MusicQuizCommandError;
 use crate::games::music_quiz::QuizTrack;
 use crate::Data;
 use rand::seq::SliceRandom;
+use tracing::{debug, info};
 use url::Url;
 
 pub struct MusicQuizPreparationService;
@@ -12,11 +13,22 @@ impl MusicQuizPreparationService {
         playlist_link: Url,
         count: u32,
     ) -> Result<Vec<QuizTrack>, MusicQuizCommandError> {
+        debug!(
+            playlist_url = %playlist_link,
+            requested_rounds = count,
+            "Fetching music quiz playlist tracks"
+        );
         let mut track_list = data
             .spotify
             .get_playlist_tracks(playlist_link)
             .await
             .map_err(MusicQuizCommandError::Spotify)?;
+
+        debug!(
+            spotify_track_count = track_list.len(),
+            requested_rounds = count,
+            "Fetched Spotify playlist tracks for music quiz"
+        );
 
         if track_list.len() < count as usize {
             return Err(MusicQuizCommandError::PlaylistContainsNotEnoughSongs {
@@ -55,6 +67,11 @@ impl MusicQuizPreparationService {
             });
         }
 
+        info!(
+            selected_tracks = result.len(),
+            requested_rounds = count,
+            "Prepared previewable music quiz tracks"
+        );
         Ok(result)
     }
 }
