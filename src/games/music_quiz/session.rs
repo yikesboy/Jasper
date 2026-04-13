@@ -102,3 +102,36 @@ impl MusicQuizSession {
         leaderboard
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::MusicQuizSession;
+    use serenity::all::UserId;
+
+    fn user(id: u64) -> UserId {
+        UserId::new(id)
+    }
+
+    #[test]
+    fn leaderboard_includes_zero_scores_for_all_participants() {
+        let session = MusicQuizSession::new(3, vec![user(1), user(2), user(3)]);
+
+        assert_eq!(
+            session.get_leaderboard(),
+            vec![(user(1), 0), (user(2), 0), (user(3), 0)]
+        );
+    }
+
+    #[test]
+    fn leaderboard_is_sorted_by_score_descending() {
+        let mut session = MusicQuizSession::new(3, vec![user(1), user(2), user(3)]);
+        session.add_score(user(1), 1);
+        session.add_score(user(2), 3);
+        session.add_score(user(3), 2);
+
+        assert_eq!(
+            session.get_leaderboard(),
+            vec![(user(2), 3), (user(3), 2), (user(1), 1)]
+        );
+    }
+}
