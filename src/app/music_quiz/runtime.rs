@@ -1,5 +1,5 @@
 use crate::commands::MusicQuizCommandError;
-use crate::games::music_quiz::{quiz::MusicQuiz, QuizTrack};
+use crate::games::music_quiz::{MusicQuizHandle, QuizTrack, quiz::MusicQuiz};
 use crate::games::state::{GameState, GameStateError};
 use crate::Context;
 use reqwest::Client;
@@ -8,7 +8,6 @@ use serenity::client::Context as SerenityContext;
 use songbird::input::HttpRequest;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
 use url::Url;
 
 pub(crate) struct PreparedMusicQuiz {
@@ -50,10 +49,10 @@ impl MusicQuizRuntime {
     }
 
     pub async fn start(self, prepared: PreparedMusicQuiz) -> Result<(), MusicQuizCommandError> {
-        let quiz = Arc::new(Mutex::new(prepared.quiz));
+        let quiz = MusicQuizHandle::new(prepared.quiz);
 
         self.game_state
-            .start_quiz(self.guild_id, Arc::clone(&quiz))
+            .start_quiz(self.guild_id, quiz.clone())
             .map_err(|error| match error {
                 GameStateError::GameAlreadyActiveInServer => {
                     MusicQuizCommandError::GameAlreadyRunningInGuild
@@ -73,9 +72,9 @@ impl MusicQuizRuntime {
         Ok(())
     }
 
-    fn spawn_run_task(self, quiz: Arc<Mutex<MusicQuiz>>, tracks: Vec<QuizTrack>) {
+    fn spawn_run_task(self, quiz: MusicQuizHandle, tracks: Vec<QuizTrack>) {
         tokio::spawn(async move {
-            let result = self.run(Arc::clone(&quiz), tracks).await;
+            let result = self.run(quiz.clone(), tracks).await;
 
             let _ = self.leave_voice_channel().await;
             self.game_state.end_game(self.guild_id);
@@ -88,14 +87,11 @@ impl MusicQuizRuntime {
 
     async fn run(
         &self,
-        quiz: Arc<Mutex<MusicQuiz>>,
+        quiz: MusicQuizHandle,
         tracks: Vec<QuizTrack>,
     ) -> Result<(), MusicQuizCommandError> {
         for track in tracks {
-            {
-                let mut locked_quiz = quiz.lock().await;
-                locked_quiz.session_mut().start_round(track.clone());
-            }
+            quiz.start_round(track.clone()).await;
 
             self.send_round_start_message(&quiz).await?;
             self.play_track(track.preview_url()).await?;
@@ -110,22 +106,19 @@ impl MusicQuizRuntime {
 
     async fn send_round_start_message(
         &self,
-        quiz: &Arc<Mutex<MusicQuiz>>,
+        quiz: &MusicQuizHandle,
     ) -> Result<(), MusicQuizCommandError> {
-        let (round_number, total_rounds) = {
-            let locked_quiz = quiz.lock().await;
-            (
-                locked_quiz.session().round_number(),
-                locked_quiz.session().total_rounds(),
-            )
-        };
+        let progress = quiz.round_progress().await;
 
         self.response_channel_id
             .send_message(
                 &self.serenity_ctx.http,
                 CreateMessage::new().embed(
                     CreateEmbed::new()
-                        .title(format!("🎵 Round {}/{}", round_number, total_rounds))
+                        .title(format!(
+                            "🎵 Round {}/{}",
+                            progress.round_number, progress.total_rounds
+                        ))
                         .description("Listen to the song and guess the artist and/or track name!")
                         .color(0x3498db),
                 ),
@@ -138,26 +131,23 @@ impl MusicQuizRuntime {
 
     async fn send_round_completion_message(
         &self,
-        quiz: &Arc<Mutex<MusicQuiz>>,
+        quiz: &MusicQuizHandle,
     ) -> Result<(), MusicQuizCommandError> {
-        let locked_quiz = quiz.lock().await;
-
-        let round = match locked_quiz.session().current_round() {
+        let round = match quiz.round_completion().await {
             Some(round) => round,
             None => return Ok(()),
         };
 
         let mut description = format!(
             "**Song:** {} by {}\n\n",
-            round.track().name(),
-            round.track().artist()
+            round.track_name, round.artist_name
         );
 
-        if let Some(artist_guesser) = round.artist_guessed_by() {
+        if let Some(artist_guesser) = round.artist_guessed_by {
             description.push_str(&format!("🎤 Artist guessed by <@{}>\n", artist_guesser));
         }
 
-        if let Some(track_guesser) = round.track_guessed_by() {
+        if let Some(track_guesser) = round.track_guessed_by {
             description.push_str(&format!("🎵 Track guessed by <@{}>\n", track_guesser));
         }
 
@@ -179,12 +169,9 @@ impl MusicQuizRuntime {
 
     async fn send_final_results(
         &self,
-        quiz: &Arc<Mutex<MusicQuiz>>,
+        quiz: &MusicQuizHandle,
     ) -> Result<(), MusicQuizCommandError> {
-        let leaderboard = {
-            let locked_quiz = quiz.lock().await;
-            locked_quiz.session().get_leaderboard()
-        };
+        let leaderboard = quiz.leaderboard().await;
 
         let mut description = String::from("**Final Scores:**\n\n");
 
@@ -324,11 +311,8 @@ pub fn get_voice_channel_participants(
         .collect())
 }
 
-async fn wait_for_track_finished_or_timeout(quiz: &Arc<Mutex<MusicQuiz>>) {
-    let notify = {
-        let locked_quiz = quiz.lock().await;
-        locked_quiz.notify_round_complete()
-    };
+async fn wait_for_track_finished_or_timeout(quiz: &MusicQuizHandle) {
+    let notify = quiz.notify_round_complete().await;
 
     tokio::select! {
         _ = notify.notified() => {},
@@ -336,11 +320,8 @@ async fn wait_for_track_finished_or_timeout(quiz: &Arc<Mutex<MusicQuiz>>) {
     }
 }
 
-async fn delay_between_rounds(quiz: &Arc<Mutex<MusicQuiz>>) {
-    let is_finished = {
-        let locked_quiz = quiz.lock().await;
-        locked_quiz.session().is_finished()
-    };
+async fn delay_between_rounds(quiz: &MusicQuizHandle) {
+    let is_finished = quiz.is_finished().await;
 
     if !is_finished {
         tokio::time::sleep(Duration::from_secs(3)).await;

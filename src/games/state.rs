@@ -1,13 +1,9 @@
-use crate::games::music_quiz::quiz::MusicQuiz;
+use crate::games::music_quiz::MusicQuizHandle;
 use crate::{games, Error as AppError};
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use serenity::all::{GuildId, Message};
-use std::sync::Arc;
 use thiserror::Error;
-use tokio::sync::Mutex;
-
-type ActiveQuiz = Arc<Mutex<MusicQuiz>>;
 
 #[derive(Error, Debug)]
 pub enum GameStateError {
@@ -16,7 +12,7 @@ pub enum GameStateError {
 }
 
 pub struct GameState {
-    games: DashMap<GuildId, ActiveQuiz>,
+    games: DashMap<GuildId, MusicQuizHandle>,
 }
 
 impl GameState {
@@ -29,7 +25,7 @@ impl GameState {
     pub fn start_quiz(
         &self,
         guild_id: GuildId,
-        quiz: ActiveQuiz,
+        quiz: MusicQuizHandle,
     ) -> Result<(), GameStateError> {
         match self.games.entry(guild_id) {
             Entry::Occupied(_) => Err(GameStateError::GameAlreadyActiveInServer),

@@ -1,21 +1,16 @@
-use crate::games::music_quiz::quiz::{GuessOutcome, MusicQuiz};
+use crate::games::music_quiz::handle::MusicQuizHandle;
+use crate::games::music_quiz::quiz::GuessOutcome;
 use crate::Error;
 use serenity::all::{Context, Message, ReactionType};
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 pub async fn handle_message(
     ctx: &Context,
     msg: &Message,
-    quiz_arc: &Arc<Mutex<MusicQuiz>>,
+    quiz: &MusicQuizHandle,
 ) -> Result<(), Error> {
-    let outcome = {
-        let mut quiz = quiz_arc.lock().await;
-
-        match quiz.make_guess(msg.author.id, &msg.content) {
-            Ok(outcome) => outcome,
-            Err(_) => return Ok(()),
-        }
+    let outcome = match quiz.guess(msg.author.id, &msg.content).await {
+        Ok(outcome) => outcome,
+        Err(_) => return Ok(()),
     };
 
     let reply_content = match outcome {
