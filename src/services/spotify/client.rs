@@ -173,3 +173,37 @@ impl SpotifyClient {
         Ok(id)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::SpotifyClient;
+    use crate::services::spotify::SpotifyClientError;
+    use url::Url;
+
+    #[test]
+    fn retrieve_playlist_id_accepts_valid_playlist_url() {
+        let url = Url::parse("https://open.spotify.com/playlist/abc123").unwrap();
+
+        let playlist_id = SpotifyClient::retrieve_playlist_id(url).unwrap();
+
+        assert_eq!(playlist_id, "abc123");
+    }
+
+    #[test]
+    fn retrieve_playlist_id_rejects_non_spotify_hosts() {
+        let url = Url::parse("https://example.com/playlist/abc123").unwrap();
+
+        let error = SpotifyClient::retrieve_playlist_id(url).unwrap_err();
+
+        assert!(matches!(error, SpotifyClientError::InvalidLink(_)));
+    }
+
+    #[test]
+    fn retrieve_playlist_id_rejects_extra_path_segments() {
+        let url = Url::parse("https://open.spotify.com/playlist/abc123/tracks").unwrap();
+
+        let error = SpotifyClient::retrieve_playlist_id(url).unwrap_err();
+
+        assert!(matches!(error, SpotifyClientError::UnexpectedSegment(segment) if segment == "tracks"));
+    }
+}
