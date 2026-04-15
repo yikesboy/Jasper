@@ -4,7 +4,7 @@ use reqwest::{header, Client};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::debug;
+use tracing::{debug, warn};
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -88,8 +88,17 @@ impl SpotifyClient {
             }
             .map_err(SpotifyClientError::RequestFailed)?;
 
-            if !response.status().is_success() {
-                return Err(SpotifyClientError::FailedToRetrievePlaylistTracks);
+            let status = response.status();
+            if !status.is_success() {
+                let body = Self::read_error_response_body(response).await;
+                warn!(
+                    playlist_id = %playlist_id,
+                    page_url = %page_url,
+                    %status,
+                    response_body = %body,
+                    "Spotify playlist request rejected"
+                );
+                return Err(SpotifyClientError::FailedToRetrievePlaylistTracks { status, body });
             }
 
             let page: PlaylistPage = response
@@ -155,6 +164,32 @@ impl SpotifyClient {
         Ok(token_response.access_token)
     }
 
+    async fn read_error_response_body(response: reqwest::Response) -> String {
+        match response.text().await {
+            Ok(body) => Self::truncate_error_body(&body),
+            Err(error) => format!("<failed to read response body: {error}>"),
+        }
+    }
+
+    fn truncate_error_body(body: &str) -> String {
+        let body = body.trim();
+        if body.is_empty() {
+            return "<empty response body>".to_string();
+        }
+
+        const MAX_ERROR_BODY_LEN: usize = 512;
+        if body.len() <= MAX_ERROR_BODY_LEN {
+            return body.to_string();
+        }
+
+        let truncated = body
+            .char_indices()
+            .take_while(|(idx, _)| *idx < MAX_ERROR_BODY_LEN)
+            .map(|(_, ch)| ch)
+            .collect::<String>();
+        format!("{truncated}...")
+    }
+
     fn retrieve_playlist_id(playlist_url: Url) -> Result<String, SpotifyClientError> {
         if playlist_url.host_str() != Some("open.spotify.com") {
             return Err(SpotifyClientError::InvalidLink(playlist_url));
@@ -213,5 +248,20 @@ mod tests {
         let error = SpotifyClient::retrieve_playlist_id(url).unwrap_err();
 
         assert!(matches!(error, SpotifyClientError::UnexpectedSegment(segment) if segment == "tracks"));
+    }
+
+    #[test]
+    fn truncate_error_body_replaces_empty_bodies() {
+        let body = SpotifyClient::truncate_error_body("   ");
+
+        assert_eq!(body, "<empty response body>");
+    }
+
+    #[test]
+    fn truncate_error_body_limits_logged_response_size() {
+        let body = SpotifyClient::truncate_error_body(&"a".repeat(600));
+
+        assert_eq!(body.len(), 515);
+        assert!(body.ends_with("..."));
     }
 }

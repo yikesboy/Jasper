@@ -29,8 +29,8 @@ pub enum SpotifyClientError {
     #[error("Invalid authentication response: {0}")]
     AuthenticationResponseInvalid(#[source] Error),
 
-    #[error("Failed to retrieve playlist tracks")]
-    FailedToRetrievePlaylistTracks,
+    #[error("Failed to retrieve playlist tracks: Spotify returned {status} ({body})")]
+    FailedToRetrievePlaylistTracks { status: StatusCode, body: String },
 
     #[error("Invalid playlist response: {0}")]
     InvalidPlaylistResponse(#[source] Error),
