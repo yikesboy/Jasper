@@ -13,6 +13,11 @@ pub struct PlaylistPage {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct PlaylistResponse {
+    pub tracks: PlaylistPage,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct PlaylistItem {
     pub track: Option<FullTrack>,
 }

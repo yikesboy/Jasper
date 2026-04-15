@@ -1,5 +1,5 @@
 use super::error::SpotifyClientError;
-use super::models::{FullTrack, PlaylistPage, TokenResponse};
+use super::models::{FullTrack, PlaylistPage, PlaylistResponse, TokenResponse};
 use reqwest::{header, Client};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -63,55 +63,30 @@ impl SpotifyClient {
     ) -> Result<Vec<PlaylistTrack>, SpotifyClientError> {
         let playlist_id = Self::retrieve_playlist_id(playlist_url)?;
         debug!(playlist_id = %playlist_id, "Fetching Spotify playlist tracks");
-        let initial_page_url = format!("{}/playlists/{}/tracks", self.base_url, playlist_id);
-        let mut next_page_url = Some(initial_page_url.clone());
         let bearer_token = self.get_bearer_token().await?;
-        let mut tracks = Vec::new();
+        let first_page = self
+            .fetch_playlist_page_response::<PlaylistResponse>(
+                &format!("{}/playlists/{}", self.base_url, playlist_id),
+                &bearer_token,
+                &playlist_id,
+                Some(&[
+                    ("fields", "tracks.items(track(name,artists(name))),tracks.next"),
+                ]),
+            )
+            .await?;
+        let mut tracks = Self::collect_playlist_tracks(first_page.tracks.items);
+        let mut next_page_url: Option<String> = first_page.tracks.next;
 
-        while let Some(page_url) = next_page_url.take() {
-            let request = self
-                .http
-                .get(&page_url)
-                .bearer_auth(&bearer_token)
-                .header(header::ACCEPT, "application/json");
-
-            let response = if page_url == initial_page_url {
-                request
-                    .query(&[
-                        ("fields", "items(track(name,artists(name))),next"),
-                        ("limit", "100"),
-                    ])
-                    .send()
-                    .await
-            } else {
-                request.send().await
-            }
-            .map_err(SpotifyClientError::RequestFailed)?;
-
-            let status = response.status();
-            if !status.is_success() {
-                let body = Self::read_error_response_body(response).await;
-                warn!(
-                    playlist_id = %playlist_id,
-                    page_url = %page_url,
-                    %status,
-                    response_body = %body,
-                    "Spotify playlist request rejected"
-                );
-                return Err(SpotifyClientError::FailedToRetrievePlaylistTracks { status, body });
-            }
-
-            let page: PlaylistPage = response
-                .json()
-                .await
-                .map_err(SpotifyClientError::InvalidPlaylistResponse)?;
-
-            tracks.extend(
-                page.items
-                    .into_iter()
-                    .filter_map(|item| item.track)
-                    .map(PlaylistTrack::from),
-            );
+        while let Some(next_page) = next_page_url.take() {
+            let page = self
+                .fetch_playlist_page_response::<PlaylistPage>(
+                    &next_page,
+                    &bearer_token,
+                    &playlist_id,
+                    None,
+                )
+                .await?;
+            tracks.extend(Self::collect_playlist_tracks(page.items));
             next_page_url = page.next;
         }
 
@@ -121,6 +96,55 @@ impl SpotifyClient {
             "Fetched Spotify playlist tracks"
         );
         Ok(tracks)
+    }
+
+    async fn fetch_playlist_page_response<T>(
+        &self,
+        page_url: &str,
+        bearer_token: &str,
+        playlist_id: &str,
+        query: Option<&[(&str, &str)]>,
+    ) -> Result<T, SpotifyClientError>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let request = self
+            .http
+            .get(page_url)
+            .bearer_auth(bearer_token)
+            .header(header::ACCEPT, "application/json");
+
+        let response = match query {
+            Some(query) => request.query(query).send().await,
+            None => request.send().await,
+        }
+        .map_err(SpotifyClientError::RequestFailed)?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = Self::read_error_response_body(response).await;
+            warn!(
+                playlist_id = %playlist_id,
+                page_url = %page_url,
+                %status,
+                response_body = %body,
+                "Spotify playlist request rejected"
+            );
+            return Err(SpotifyClientError::FailedToRetrievePlaylistTracks { status, body });
+        }
+
+        response
+            .json()
+            .await
+            .map_err(SpotifyClientError::InvalidPlaylistResponse)
+    }
+
+    fn collect_playlist_tracks(items: Vec<super::models::PlaylistItem>) -> Vec<PlaylistTrack> {
+        items
+            .into_iter()
+            .filter_map(|item| item.track)
+            .map(PlaylistTrack::from)
+            .collect()
     }
 
     async fn get_bearer_token(&self) -> Result<String, SpotifyClientError> {
@@ -217,6 +241,7 @@ impl SpotifyClient {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::SpotifyClient;
@@ -230,6 +255,18 @@ mod tests {
         let playlist_id = SpotifyClient::retrieve_playlist_id(url).unwrap();
 
         assert_eq!(playlist_id, "abc123");
+    }
+
+    #[test]
+    fn retrieve_playlist_id_accepts_shared_playlist_url_with_query_string() {
+        let url = Url::parse(
+            "https://open.spotify.com/playlist/37i9dQZF1DX0Yxoavh5qJV?si=c49cc0082b34401c",
+        )
+        .unwrap();
+
+        let playlist_id = SpotifyClient::retrieve_playlist_id(url).unwrap();
+
+        assert_eq!(playlist_id, "37i9dQZF1DX0Yxoavh5qJV");
     }
 
     #[test]
