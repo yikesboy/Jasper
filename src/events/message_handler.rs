@@ -20,7 +20,7 @@ pub async fn handle_message(
     }
 
     game_state
-        .handle_message(ctx, msg)
+        .handle_message(&ctx.http, msg)
         .await
         .map_err(|error| MessageEventError::GameHandlerError(Box::new(error)))?;
 
