@@ -45,8 +45,11 @@ impl GameState {
             return Ok(());
         };
 
-        if let Some(quiz) = self.games.get(&guild_id) {
-            games::music_quiz::message_handler::handle_message(ctx, msg, quiz.value()).await?;
+        // Own the handle before awaiting: a DashMap guard would otherwise keep
+        // a blocking shard lock held during scoring and Discord HTTP requests.
+        let quiz = self.games.get(&guild_id).map(|entry| entry.value().clone());
+        if let Some(quiz) = quiz {
+            games::music_quiz::message_handler::handle_message(ctx, msg, &quiz).await?;
         }
 
         Ok(())
