@@ -66,15 +66,17 @@ impl MusicQuiz {
                     self.session.add_score(user_id, 3);
                     GuessOutcome::Both { points: 3 }
                 }
-                (Some(_), None) => {
-                    round.set_track_guessed_by(user_id);
-                    self.session.add_score(user_id, 1);
-                    GuessOutcome::Track { points: 1 }
-                }
-                (None, Some(_)) => {
+                (Some(track_guesser), None) => {
+                    let points = if track_guesser == user_id { 2 } else { 1 };
                     round.set_artist_guessed_by(user_id);
-                    self.session.add_score(user_id, 1);
-                    GuessOutcome::Artist { points: 1 }
+                    self.session.add_score(user_id, points);
+                    GuessOutcome::Artist { points }
+                }
+                (None, Some(artist_guesser)) => {
+                    let points = if artist_guesser == user_id { 2 } else { 1 };
+                    round.set_track_guessed_by(user_id);
+                    self.session.add_score(user_id, points);
+                    GuessOutcome::Track { points }
                 }
                 (Some(_), Some(_)) => GuessOutcome::AlreadyGuessed,
             },
