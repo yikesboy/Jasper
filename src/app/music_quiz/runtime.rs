@@ -1,7 +1,7 @@
 use super::notifier::MusicQuizNotifier;
 use super::voice::MusicQuizVoice;
 use crate::commands::MusicQuizCommandError;
-use crate::games::music_quiz::{MusicQuizHandle, QuizTrack, quiz::MusicQuiz};
+use crate::games::music_quiz::{MusicQuizHandle, QuizTrack, handle::RoundCompletion, quiz::MusicQuiz};
 use crate::games::state::{GameState, GameStateError};
 use crate::Context;
 use serenity::all::{ChannelId, GuildId, UserId};
@@ -77,7 +77,9 @@ impl MusicQuizRuntime {
 
     fn spawn_run_task(self, quiz: MusicQuizHandle, tracks: Vec<QuizTrack>) {
         tokio::spawn(async move {
-            let result = self.run(quiz, tracks).await;
+            let result = self.run(quiz.clone(), tracks).await;
+            // Also freeze an unfinished round if playback or messaging failed.
+            let _ = quiz.close_round().await;
 
             if let Err(error) = self.voice.leave().await {
                 warn!(
@@ -130,9 +132,11 @@ impl MusicQuizRuntime {
 
             self.notifier.send_round_start(&quiz).await?;
             self.voice.play_preview(&preview_url).await?;
-            let round_end = wait_for_track_finished_or_timeout(&quiz).await;
+            let (round_end, completion) = wait_for_round_completion_or_timeout(&quiz).await;
             self.voice.stop().await?;
-            self.notifier.send_round_completion(&quiz).await?;
+            if let Some(completion) = completion {
+                self.notifier.send_round_completion(&completion).await?;
+            }
             debug!(
                 guild_id = self.guild_id.get(),
                 round = progress.round_number,
@@ -203,13 +207,21 @@ pub fn get_voice_channel_participants(
         .collect())
 }
 
-async fn wait_for_track_finished_or_timeout(quiz: &MusicQuizHandle) -> RoundEndReason {
+async fn wait_for_round_completion_or_timeout(
+    quiz: &MusicQuizHandle,
+) -> (RoundEndReason, Option<RoundCompletion>) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(25);
+    quiz.set_round_deadline(deadline).await;
     let notify = quiz.notify_round_complete().await;
 
-    tokio::select! {
+    let reason = tokio::select! {
         _ = notify.notified() => RoundEndReason::GuessedEarly,
-        _ = tokio::time::sleep(Duration::from_secs(25)) => RoundEndReason::TimedOut,
-    }
+        _ = tokio::time::sleep_until(deadline) => RoundEndReason::TimedOut,
+    };
+
+    // Close under the guess mutex before any stop/reveal/intermission awaits.
+    let completion = quiz.close_round().await;
+    (reason, completion)
 }
 
 async fn delay_between_rounds(quiz: &MusicQuizHandle) {
