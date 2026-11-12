@@ -60,3 +60,7 @@ impl GameState {
         self.games.remove(&guild_id);
     }
 }
+
+#[cfg(test)]
+#[path = "state_tests.rs"]
+mod tests;
