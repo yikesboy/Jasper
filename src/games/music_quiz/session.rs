@@ -1,6 +1,7 @@
 use crate::games::music_quiz::QuizTrack;
 use serenity::all::UserId;
 use std::collections::HashMap;
+use tokio::sync::watch;
 use tokio::time::Instant;
 
 #[derive(Debug, Clone)]
@@ -10,6 +11,7 @@ pub struct Round {
     track_guessed_by: Option<UserId>,
     closed: bool,
     deadline: Option<Instant>,
+    completion: watch::Sender<bool>,
 }
 
 impl Round {
@@ -20,6 +22,7 @@ impl Round {
             track_guessed_by: None,
             closed: false,
             deadline: None,
+            completion: watch::channel(false).0,
         }
     }
 
@@ -36,6 +39,17 @@ impl Round {
 
     pub fn close(&mut self) {
         self.closed = true;
+    }
+
+    pub fn subscribe_completion(&self) -> watch::Receiver<bool> {
+        self.completion.subscribe()
+    }
+
+    pub fn publish_completion(&self) {
+        if self.is_complete() {
+            // Unlike a transient notification, this survives zero subscribers.
+            self.completion.send_replace(true);
+        }
     }
 
     pub fn is_closed(&self) -> bool {

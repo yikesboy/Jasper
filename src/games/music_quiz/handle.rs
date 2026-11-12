@@ -101,6 +101,25 @@ impl MusicQuizHandle {
         let quiz = self.quiz.lock().await;
         quiz.notify_round_complete()
     }
+
+    pub async fn wait_for_round_complete(&self) -> Result<(), MusicQuizError> {
+        let mut completion = {
+            let quiz = self.quiz.lock().await;
+            let round = quiz
+                .session()
+                .current_round()
+                .ok_or(MusicQuizError::NoRoundInProgress)?;
+            round.subscribe_completion()
+        };
+
+        // The channel belongs to the captured round. Advancing to another round
+        // drops its sender rather than completing this wait with a stale signal.
+        completion
+            .wait_for(|complete| *complete)
+            .await
+            .map(|_| ())
+            .map_err(|_| MusicQuizError::NoRoundInProgress)
+    }
 }
 
 #[cfg(test)]

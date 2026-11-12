@@ -120,6 +120,9 @@ impl MusicQuiz {
         if self.is_round_complete() {
             self.round_complete_notify.notify_waiters();
         }
+        if let Some(round) = self.session.current_round() {
+            round.publish_completion();
+        }
 
         Ok(outcome)
     }
