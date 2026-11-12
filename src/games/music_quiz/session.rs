@@ -39,7 +39,10 @@ impl Round {
     }
 
     pub fn is_closed(&self) -> bool {
-        self.closed || self.deadline.is_some_and(|deadline| Instant::now() >= deadline)
+        self.closed
+            || self
+                .deadline
+                .is_some_and(|deadline| Instant::now() >= deadline)
     }
 
     pub fn artist_guessed_by(&self) -> Option<UserId> {

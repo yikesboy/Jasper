@@ -102,3 +102,7 @@ impl MusicQuizHandle {
         quiz.notify_round_complete()
     }
 }
+
+#[cfg(test)]
+#[path = "round_lifecycle_tests.rs"]
+mod round_lifecycle_tests;

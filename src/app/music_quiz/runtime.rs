@@ -231,3 +231,7 @@ async fn delay_between_rounds(quiz: &MusicQuizHandle) {
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
 }
+
+#[cfg(test)]
+#[path = "runtime_tests.rs"]
+mod tests;
