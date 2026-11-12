@@ -170,6 +170,10 @@ impl MusicQuiz {
 }
 
 #[cfg(test)]
+#[path = "scoring_tests.rs"]
+mod scoring_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{GuessOutcome, MusicQuiz};
     use crate::games::music_quiz::QuizTrack;
