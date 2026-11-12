@@ -1,12 +1,15 @@
 use crate::games::music_quiz::QuizTrack;
 use serenity::all::UserId;
 use std::collections::HashMap;
+use tokio::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct Round {
     track: QuizTrack,
     artist_guessed_by: Option<UserId>,
     track_guessed_by: Option<UserId>,
+    closed: bool,
+    deadline: Option<Instant>,
 }
 
 impl Round {
@@ -15,11 +18,31 @@ impl Round {
             track,
             artist_guessed_by: None,
             track_guessed_by: None,
+            closed: false,
+            deadline: None,
         }
     }
 
     pub fn track(&self) -> &QuizTrack {
         &self.track
+    }
+
+    pub fn set_deadline(&mut self, deadline: Instant) {
+        // A round's time limit cannot be extended or re-armed after closure.
+        if self.deadline.is_none() && !self.closed {
+            self.deadline = Some(deadline);
+        }
+    }
+
+    pub fn close(&mut self) {
+        self.closed = true;
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed
+            || self
+                .deadline
+                .is_some_and(|deadline| Instant::now() >= deadline)
     }
 
     pub fn artist_guessed_by(&self) -> Option<UserId> {

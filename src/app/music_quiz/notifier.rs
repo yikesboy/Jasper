@@ -1,5 +1,5 @@
 use crate::commands::MusicQuizCommandError;
-use crate::games::music_quiz::MusicQuizHandle;
+use crate::games::music_quiz::{MusicQuizHandle, handle::RoundCompletion};
 use serenity::all::{ChannelId, CreateEmbed, CreateMessage, UserId};
 use serenity::client::Context as SerenityContext;
 
@@ -43,13 +43,8 @@ impl MusicQuizNotifier {
 
     pub async fn send_round_completion(
         &self,
-        quiz: &MusicQuizHandle,
+        round: &RoundCompletion,
     ) -> Result<(), MusicQuizCommandError> {
-        let round = match quiz.round_completion().await {
-            Some(round) => round,
-            None => return Ok(()),
-        };
-
         let mut description = format!(
             "**Song:** {} by {}\n\n",
             round.track_name, round.artist_name
