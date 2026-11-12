@@ -26,6 +26,19 @@ pub enum SpotifyClientError {
     #[error("Authentication rejected with status {0}")]
     AuthenticationRejected(StatusCode),
 
+    #[error(
+        "Spotify authorization has expired or been revoked. Reauthorize the operator's Spotify account and replace SPOTIFY_REFRESH_TOKEN."
+    )]
+    ReauthorizationRequired,
+
+    #[error("Spotify returned an empty token or invalid token lifetime")]
+    InvalidTokenLifetime,
+
+    #[error(
+        "Spotify denied playlist access. In development mode, the authorized Spotify user must own or collaborate on the playlist. Check playlist-read-private permission, the app's allowed users, and the app owner's Premium subscription."
+    )]
+    PlaylistAccessDenied,
+
     #[error("Invalid authentication response: {0}")]
     AuthenticationResponseInvalid(#[source] Error),
 
@@ -34,6 +47,11 @@ pub enum SpotifyClientError {
 
     #[error("Invalid playlist response: {0}")]
     InvalidPlaylistResponse(#[source] Error),
+
+    #[error(
+        "Spotify did not return playlist contents. Development-mode apps require SPOTIFY_REFRESH_TOKEN for a user who owns or collaborates on this playlist; public visibility alone is not sufficient."
+    )]
+    PlaylistContentsUnavailable,
 
     #[error("Request failed: {0}")]
     RequestFailed(#[source] Error),

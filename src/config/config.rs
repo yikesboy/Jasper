@@ -7,6 +7,7 @@ pub struct Config {
     pub environment: Environment,
     pub spotify_client_id: String,
     pub spotify_client_secret: String,
+    pub spotify_refresh_token: Option<String>,
     pub discord_token: String,
     pub discord_testing_guild_id: Option<u64>,
 }
@@ -43,6 +44,9 @@ impl Config {
             environment,
             spotify_client_id: Self::read_in_env_var(EnvVar::SpotifyClientId)?,
             spotify_client_secret: Self::read_in_env_var(EnvVar::SpotifyClientSecret)?,
+            spotify_refresh_token: env::var(EnvVar::SpotifyRefreshToken.key())
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
             discord_token: Self::read_in_env_var(EnvVar::DiscordToken)?,
             discord_testing_guild_id,
         })

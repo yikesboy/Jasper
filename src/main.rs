@@ -120,6 +120,7 @@ fn create_framework(config: Config) -> Framework<Data, Error> {
                 let spotify = SpotifyClient::new(
                     &config.spotify_client_id,
                     &config.spotify_client_secret,
+                    config.spotify_refresh_token.as_deref(),
                     None,
                 )
                 .await?;
