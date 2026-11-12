@@ -3,6 +3,7 @@ use crate::{games, Error as AppError};
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use serenity::all::{GuildId, Message};
+use serenity::http::Http;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -38,7 +39,7 @@ impl GameState {
 
     pub async fn handle_message(
         &self,
-        ctx: &serenity::all::Context,
+        http: &Http,
         msg: &Message,
     ) -> Result<(), AppError> {
         let Some(guild_id) = msg.guild_id else {
@@ -49,7 +50,7 @@ impl GameState {
         // a blocking shard lock held during scoring and Discord HTTP requests.
         let quiz = self.games.get(&guild_id).map(|entry| entry.value().clone());
         if let Some(quiz) = quiz {
-            games::music_quiz::message_handler::handle_message(ctx, msg, &quiz).await?;
+            games::music_quiz::message_handler::handle_message(http, msg, &quiz).await?;
         }
 
         Ok(())

@@ -1,11 +1,12 @@
 use crate::games::music_quiz::handle::MusicQuizHandle;
 use crate::games::music_quiz::quiz::GuessOutcome;
 use crate::Error;
-use serenity::all::{Context, Message, ReactionType};
+use serenity::all::{Message, ReactionType};
+use serenity::http::Http;
 use tracing::{debug, warn};
 
 pub async fn handle_message(
-    ctx: &Context,
+    http: &Http,
     msg: &Message,
     quiz: &MusicQuizHandle,
 ) -> Result<(), Error> {
@@ -30,12 +31,12 @@ pub async fn handle_message(
         }
         GuessOutcome::AlreadyGuessed => return Ok(()),
         GuessOutcome::Wrong => {
-            react_to_message(ctx, msg, ReactionType::Unicode("❌".to_string())).await;
+            react_to_message(http, msg, ReactionType::Unicode("❌".to_string())).await;
             return Ok(());
         }
     };
 
-    if let Err(error) = msg.reply(&ctx.http, reply_content).await {
+    if let Err(error) = msg.reply(http, reply_content).await {
         warn!(
             user_id = msg.author.id.get(),
             message_id = msg.id.get(),
@@ -46,8 +47,8 @@ pub async fn handle_message(
     Ok(())
 }
 
-async fn react_to_message(ctx: &Context, msg: &Message, reaction: ReactionType) {
-    if let Err(error) = msg.react(&ctx.http, reaction).await {
+async fn react_to_message(http: &Http, msg: &Message, reaction: ReactionType) {
+    if let Err(error) = msg.react(http, reaction).await {
         warn!(
             user_id = msg.author.id.get(),
             message_id = msg.id.get(),
