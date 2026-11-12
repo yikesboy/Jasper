@@ -3,7 +3,7 @@ use super::models::{FullTrack, PlaylistPage, PlaylistResponse, TokenResponse};
 use reqwest::{Client, header};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use url::Url;
 
@@ -36,9 +36,16 @@ impl From<FullTrack> for PlaylistTrack {
 pub struct SpotifyClient {
     http: Client,
     base_url: String,
+    token_url: String,
     client_id: String,
     client_secret: String,
-    bearer_token: Arc<RwLock<Option<(String, Instant)>>>,
+    user_authorization: bool,
+    auth: Arc<Mutex<SpotifyAuthState>>,
+}
+
+struct SpotifyAuthState {
+    bearer_token: Option<(String, Instant)>,
+    refresh_token: Option<String>,
 }
 
 impl SpotifyClient {
@@ -47,18 +54,37 @@ impl SpotifyClient {
     pub async fn new(
         client_id: &str,
         client_secret: &str,
+        refresh_token: Option<&str>,
         base_url: Option<&str>,
     ) -> Result<Self, SpotifyClientError> {
-        let client = Client::new();
-        let base_url = base_url.unwrap_or(Self::BASE_URL).to_string();
+        Ok(Self::with_endpoints(
+            client_id,
+            client_secret,
+            refresh_token,
+            base_url.unwrap_or(Self::BASE_URL),
+            Self::TOKEN_URL,
+        ))
+    }
 
-        Ok(Self {
-            http: client,
-            base_url,
+    fn with_endpoints(
+        client_id: &str,
+        client_secret: &str,
+        refresh_token: Option<&str>,
+        base_url: &str,
+        token_url: &str,
+    ) -> Self {
+        Self {
+            http: Client::new(),
+            base_url: base_url.to_string(),
+            token_url: token_url.to_string(),
             client_id: client_id.into(),
             client_secret: client_secret.into(),
-            bearer_token: Arc::new(RwLock::new(None)),
-        })
+            user_authorization: refresh_token.is_some(),
+            auth: Arc::new(Mutex::new(SpotifyAuthState {
+                bearer_token: None,
+                refresh_token: refresh_token.map(str::to_owned),
+            })),
+        }
     }
 
     pub async fn get_playlist_tracks(
@@ -68,18 +94,28 @@ impl SpotifyClient {
         let playlist_id = Self::retrieve_playlist_id(playlist_url)?;
         debug!(playlist_id = %playlist_id, "Fetching Spotify playlist tracks");
         let bearer_token = self.get_bearer_token().await?;
-        let first_page = self
-            .fetch_playlist_page_response::<PlaylistResponse>(
-                &format!("{}/playlists/{}", self.base_url, playlist_id),
+        let playlist_endpoint = format!("{}/playlists/{}", self.base_url, playlist_id);
+        let first_page = if self.user_authorization {
+            self.fetch_playlist_page_response::<PlaylistPage>(
+                &format!("{playlist_endpoint}/items"),
                 &bearer_token,
                 &playlist_id,
-                None,
             )
-            .await?;
-        let first_page = first_page
-            .items
-            .or(first_page.tracks)
-            .ok_or(SpotifyClientError::PlaylistContentsUnavailable)?;
+            .await?
+        } else {
+            // Extended Quota apps retain the legacy client-credentials contract.
+            let response = self
+                .fetch_playlist_page_response::<PlaylistResponse>(
+                    &playlist_endpoint,
+                    &bearer_token,
+                    &playlist_id,
+                )
+                .await?;
+            response
+                .items
+                .or(response.tracks)
+                .ok_or(SpotifyClientError::PlaylistContentsUnavailable)?
+        };
         let mut tracks = Self::collect_playlist_tracks(first_page.items);
         let mut next_page_url: Option<String> = first_page.next;
 
@@ -89,7 +125,6 @@ impl SpotifyClient {
                     &next_page,
                     &bearer_token,
                     &playlist_id,
-                    None,
                 )
                 .await?;
             tracks.extend(Self::collect_playlist_tracks(page.items));
@@ -109,24 +144,23 @@ impl SpotifyClient {
         page_url: &str,
         bearer_token: &str,
         playlist_id: &str,
-        query: Option<&[(&str, &str)]>,
     ) -> Result<T, SpotifyClientError>
     where
         T: serde::de::DeserializeOwned,
     {
-        let request = self
+        let response = self
             .http
             .get(page_url)
             .bearer_auth(bearer_token)
-            .header(header::ACCEPT, "application/json");
-
-        let response = match query {
-            Some(query) => request.query(query).send().await,
-            None => request.send().await,
-        }
-        .map_err(SpotifyClientError::RequestFailed)?;
+            .header(header::ACCEPT, "application/json")
+            .send()
+            .await
+            .map_err(SpotifyClientError::RequestFailed)?;
 
         let status = response.status();
+        if status == reqwest::StatusCode::FORBIDDEN {
+            return Err(SpotifyClientError::PlaylistAccessDenied);
+        }
         if !status.is_success() {
             let body = Self::read_error_response_body(response).await;
             warn!(
@@ -154,28 +188,41 @@ impl SpotifyClient {
     }
 
     async fn get_bearer_token(&self) -> Result<String, SpotifyClientError> {
-        {
-            let token_guard = self.bearer_token.read().await;
-
-            if let Some((token, expires_at)) = &*token_guard {
-                if expires_at > &Instant::now() {
-                    return Ok(token.clone());
-                }
+        // Serialize refreshes so a rotated refresh token is used by every clone.
+        let mut auth = self.auth.lock().await;
+        if let Some((token, expires_at)) = &auth.bearer_token {
+            if *expires_at > Instant::now() {
+                return Ok(token.clone());
             }
         }
 
         debug!("Refreshing Spotify bearer token");
+        let mut form = vec![("grant_type", "client_credentials")];
+        if let Some(refresh_token) = auth.refresh_token.as_deref() {
+            form = vec![
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh_token),
+            ];
+        }
+        let requested_at = Instant::now();
         let response = self
             .http
-            .post(Self::TOKEN_URL)
+            .post(&self.token_url)
             .basic_auth(&self.client_id, Some(&self.client_secret))
-            .form(&[("grant_type", "client_credentials")])
+            .form(&form)
             .send()
             .await
             .map_err(SpotifyClientError::AuthenticationRequestFailed)?;
 
         let status = response.status();
         if !status.is_success() {
+            if self.user_authorization {
+                // Do not log the token response or fall back to app credentials.
+                let body: serde_json::Value = response.json().await.unwrap_or_default();
+                if body.get("error").and_then(|value| value.as_str()) == Some("invalid_grant") {
+                    return Err(SpotifyClientError::ReauthorizationRequired);
+                }
+            }
             return Err(SpotifyClientError::AuthenticationRejected(status));
         }
 
@@ -184,12 +231,23 @@ impl SpotifyClient {
             .await
             .map_err(SpotifyClientError::AuthenticationResponseInvalid)?;
 
-        let expires_at = Instant::now() + Duration::from_secs(token_response.expires_in as u64);
-
-        {
-            let mut token_guard = self.bearer_token.write().await;
-            *token_guard = Some((token_response.access_token.clone(), expires_at));
+        if token_response.access_token.is_empty() || token_response.expires_in == 0 {
+            return Err(SpotifyClientError::InvalidTokenLifetime);
         }
+        let expires_at = requested_at
+            .checked_add(Duration::from_secs(
+                token_response.expires_in.saturating_sub(30),
+            ))
+            .ok_or(SpotifyClientError::InvalidTokenLifetime)?;
+        if self.user_authorization {
+            if let Some(refresh_token) = token_response.refresh_token {
+                if refresh_token.is_empty() {
+                    return Err(SpotifyClientError::InvalidTokenLifetime);
+                }
+                auth.refresh_token = Some(refresh_token);
+            }
+        }
+        auth.bearer_token = Some((token_response.access_token.clone(), expires_at));
 
         Ok(token_response.access_token)
     }

@@ -3,7 +3,8 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug)]
 pub struct TokenResponse {
     pub access_token: String,
-    pub expires_in: i32,
+    pub expires_in: u64,
+    pub refresh_token: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
