@@ -56,6 +56,10 @@ impl MusicQuiz {
             Some(round) => round,
             None => return Err(MusicQuizError::NoRoundInProgress),
         };
+        if round.is_closed() {
+            round.close();
+            return Err(MusicQuizError::RoundClosed);
+        }
         let guess_result = Self::evaluate_user_guess(guess, round.track());
 
         let outcome = match guess_result {

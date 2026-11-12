@@ -3,6 +3,7 @@ use crate::games::music_quiz::{MusicQuizError, QuizTrack};
 use serenity::all::UserId;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
+use tokio::time::Instant;
 
 #[derive(Clone)]
 pub struct MusicQuizHandle {
@@ -14,6 +15,7 @@ pub struct RoundProgress {
     pub total_rounds: u32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoundCompletion {
     pub track_name: String,
     pub artist_name: String,
@@ -46,6 +48,28 @@ impl MusicQuizHandle {
         let quiz = self.quiz.lock().await;
         let round = quiz.session().current_round()?;
 
+        Some(RoundCompletion {
+            track_name: round.track().name().to_string(),
+            artist_name: round.track().artist().to_string(),
+            artist_guessed_by: round.artist_guessed_by(),
+            track_guessed_by: round.track_guessed_by(),
+        })
+    }
+
+    pub async fn set_round_deadline(&self, deadline: Instant) {
+        let mut quiz = self.quiz.lock().await;
+        if let Some(round) = quiz.session_mut().current_round_mut() {
+            round.set_deadline(deadline);
+        }
+    }
+
+    pub async fn close_round(&self) -> Option<RoundCompletion> {
+        let mut quiz = self.quiz.lock().await;
+        let round = quiz.session_mut().current_round_mut()?;
+        round.close();
+
+        // Closing and snapshotting share the guess mutex: no late guess can
+        // change the winners or scores after this result is captured.
         Some(RoundCompletion {
             track_name: round.track().name().to_string(),
             artist_name: round.track().artist().to_string(),
