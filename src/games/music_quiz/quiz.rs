@@ -3,7 +3,6 @@ use crate::games::music_quiz::session::MusicQuizSession;
 use crate::games::music_quiz::QuizTrack;
 use serenity::all::UserId;
 use strsim::normalized_levenshtein;
-use tokio::sync::Notify;
 
 enum GuessResult {
     ArtistOnly,
@@ -21,7 +20,6 @@ pub enum GuessOutcome {
 }
 pub struct MusicQuiz {
     session: MusicQuizSession,
-    round_complete_notify: std::sync::Arc<Notify>,
 }
 
 impl MusicQuiz {
@@ -35,7 +33,6 @@ impl MusicQuiz {
     ) -> Self {
         Self {
             session: MusicQuizSession::new(total_rounds, participants),
-            round_complete_notify: std::sync::Arc::new(Notify::new()),
         }
     }
 
@@ -117,15 +114,11 @@ impl MusicQuiz {
             GuessResult::Neither => GuessOutcome::Wrong,
         };
 
-        if self.is_round_complete() {
-            self.round_complete_notify.notify_waiters();
+        if let Some(round) = self.session.current_round() {
+            round.publish_completion();
         }
 
         Ok(outcome)
-    }
-
-    pub fn notify_round_complete(&self) -> std::sync::Arc<Notify> {
-        self.round_complete_notify.clone()
     }
 
     fn evaluate_user_guess(guess: &str, current_track: &QuizTrack) -> GuessResult {
@@ -238,13 +231,16 @@ mod tests {
         assert!(matches!(result, Err(crate::games::music_quiz::MusicQuizError::NoRoundInProgress)));
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn round_completion_notifies_waiters() {
         let mut quiz = quiz_with_round("Africa", "Toto");
-        let notify = quiz.notify_round_complete();
+        let mut completion = quiz.session().current_round().unwrap().subscribe_completion();
 
         let waiter = tokio::spawn(async move {
-            timeout(Duration::from_millis(100), notify.notified()).await.is_ok()
+            matches!(
+                timeout(Duration::from_millis(100), completion.wait_for(|complete| *complete)).await,
+                Ok(Ok(_))
+            )
         });
 
         yield_now().await;

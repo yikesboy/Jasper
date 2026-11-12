@@ -2,7 +2,7 @@ use crate::games::music_quiz::quiz::{GuessOutcome, MusicQuiz};
 use crate::games::music_quiz::{MusicQuizError, QuizTrack};
 use serenity::all::UserId;
 use std::sync::Arc;
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 #[derive(Clone)]
@@ -97,12 +97,30 @@ impl MusicQuizHandle {
         quiz.session().is_finished()
     }
 
-    pub async fn notify_round_complete(&self) -> Arc<Notify> {
-        let quiz = self.quiz.lock().await;
-        quiz.notify_round_complete()
+    pub async fn wait_for_round_complete(&self) -> Result<(), MusicQuizError> {
+        let mut completion = {
+            let quiz = self.quiz.lock().await;
+            let round = quiz
+                .session()
+                .current_round()
+                .ok_or(MusicQuizError::NoRoundInProgress)?;
+            round.subscribe_completion()
+        };
+
+        // The channel belongs to the captured round. Advancing to another round
+        // drops its sender rather than completing this wait with a stale signal.
+        completion
+            .wait_for(|complete| *complete)
+            .await
+            .map(|_| ())
+            .map_err(|_| MusicQuizError::NoRoundInProgress)
     }
 }
 
 #[cfg(test)]
 #[path = "round_lifecycle_tests.rs"]
 mod round_lifecycle_tests;
+
+#[cfg(test)]
+#[path = "completion_tests.rs"]
+mod completion_tests;
