@@ -212,10 +212,8 @@ async fn wait_for_round_completion_or_timeout(
 ) -> (RoundEndReason, Option<RoundCompletion>) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(25);
     quiz.set_round_deadline(deadline).await;
-    let notify = quiz.notify_round_complete().await;
-
     let reason = tokio::select! {
-        _ = notify.notified() => RoundEndReason::GuessedEarly,
+        Ok(()) = quiz.wait_for_round_complete() => RoundEndReason::GuessedEarly,
         _ = tokio::time::sleep_until(deadline) => RoundEndReason::TimedOut,
     };
 

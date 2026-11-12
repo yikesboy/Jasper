@@ -2,7 +2,7 @@ use crate::games::music_quiz::quiz::{GuessOutcome, MusicQuiz};
 use crate::games::music_quiz::{MusicQuizError, QuizTrack};
 use serenity::all::UserId;
 use std::sync::Arc;
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 #[derive(Clone)]
@@ -95,11 +95,6 @@ impl MusicQuizHandle {
     pub async fn is_finished(&self) -> bool {
         let quiz = self.quiz.lock().await;
         quiz.session().is_finished()
-    }
-
-    pub async fn notify_round_complete(&self) -> Arc<Notify> {
-        let quiz = self.quiz.lock().await;
-        quiz.notify_round_complete()
     }
 
     pub async fn wait_for_round_complete(&self) -> Result<(), MusicQuizError> {
