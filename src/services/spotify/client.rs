@@ -1,6 +1,6 @@
 use super::error::SpotifyClientError;
 use super::models::{FullTrack, PlaylistPage, PlaylistResponse, TokenResponse};
-use reqwest::{header, Client};
+use reqwest::{Client, header};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -23,7 +23,11 @@ impl From<FullTrack> for PlaylistTrack {
     fn from(track: FullTrack) -> Self {
         Self {
             title: track.name,
-            artists: track.artists.into_iter().map(|artist| artist.name).collect(),
+            artists: track
+                .artists
+                .into_iter()
+                .map(|artist| artist.name)
+                .collect(),
         }
     }
 }
@@ -69,13 +73,15 @@ impl SpotifyClient {
                 &format!("{}/playlists/{}", self.base_url, playlist_id),
                 &bearer_token,
                 &playlist_id,
-                Some(&[
-                    ("fields", "tracks.items(track(name,artists(name))),tracks.next"),
-                ]),
+                None,
             )
             .await?;
-        let mut tracks = Self::collect_playlist_tracks(first_page.tracks.items);
-        let mut next_page_url: Option<String> = first_page.tracks.next;
+        let first_page = first_page
+            .items
+            .or(first_page.tracks)
+            .ok_or(SpotifyClientError::PlaylistContentsUnavailable)?;
+        let mut tracks = Self::collect_playlist_tracks(first_page.items);
+        let mut next_page_url: Option<String> = first_page.next;
 
         while let Some(next_page) = next_page_url.take() {
             let page = self
@@ -142,7 +148,7 @@ impl SpotifyClient {
     fn collect_playlist_tracks(items: Vec<super::models::PlaylistItem>) -> Vec<PlaylistTrack> {
         items
             .into_iter()
-            .filter_map(|item| item.track)
+            .filter_map(|item| item.item.or(item.track))
             .map(PlaylistTrack::from)
             .collect()
     }
@@ -241,7 +247,6 @@ impl SpotifyClient {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::SpotifyClient;
@@ -284,7 +289,9 @@ mod tests {
 
         let error = SpotifyClient::retrieve_playlist_id(url).unwrap_err();
 
-        assert!(matches!(error, SpotifyClientError::UnexpectedSegment(segment) if segment == "tracks"));
+        assert!(
+            matches!(error, SpotifyClientError::UnexpectedSegment(segment) if segment == "tracks")
+        );
     }
 
     #[test]

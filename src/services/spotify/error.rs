@@ -35,6 +35,11 @@ pub enum SpotifyClientError {
     #[error("Invalid playlist response: {0}")]
     InvalidPlaylistResponse(#[source] Error),
 
+    #[error(
+        "Spotify did not return playlist contents. Development-mode apps require SPOTIFY_REFRESH_TOKEN for a user who owns or collaborates on this playlist; public visibility alone is not sufficient."
+    )]
+    PlaylistContentsUnavailable,
+
     #[error("Request failed: {0}")]
     RequestFailed(#[source] Error),
 }
