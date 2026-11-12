@@ -120,3 +120,7 @@ impl MusicQuizHandle {
 #[cfg(test)]
 #[path = "round_lifecycle_tests.rs"]
 mod round_lifecycle_tests;
+
+#[cfg(test)]
+#[path = "completion_tests.rs"]
+mod completion_tests;
