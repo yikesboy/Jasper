@@ -306,6 +306,10 @@ impl SpotifyClient {
 }
 
 #[cfg(test)]
+#[path = "client_tests.rs"]
+mod http_tests;
+
+#[cfg(test)]
 mod tests {
     use super::SpotifyClient;
     use crate::services::spotify::SpotifyClientError;
